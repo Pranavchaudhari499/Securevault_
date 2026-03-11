@@ -1,0 +1,10 @@
+const express = require('express');
+const router = express.Router();
+const { protect, authorize } = require('../middleware/auth');
+const { createTransaction, getMyTransactions, getAllTransactions, topUpBalance, getBalanceInstant } = require('../controllers/transactionController');
+router.post('/', protect, authorize('user'), createTransaction);
+router.get('/my', protect, authorize('user'), getMyTransactions);
+router.get('/balance', protect, authorize('user'), getBalanceInstant);
+router.post('/topup', protect, authorize('user'), topUpBalance);
+router.get('/all', protect, authorize('gateway_admin', 'bank_officer'), getAllTransactions);
+module.exports = router;
