@@ -2,6 +2,23 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authAPI } from '../services/api';
 
+function Field({ label, fieldKey, type = 'text', placeholder, maxLength, value, error, onChange }) {
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-2)', marginBottom: '5px', fontWeight: '500' }}>{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(fieldKey, e.target.value)}
+        type={type}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        style={{ borderColor: error ? 'var(--red)' : undefined }}
+      />
+      {error && <div style={{ fontSize: '11px', color: 'var(--red)', marginTop: '3px' }}>{error}</div>}
+    </div>
+  );
+}
+
 export default function RegisterPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', role: 'user' });
   const [errors, setErrors] = useState({});
@@ -35,15 +52,6 @@ export default function RegisterPage() {
 
   const update = (k, v) => { setForm(p => ({ ...p, [k]: v })); if (errors[k]) setErrors(p => ({ ...p, [k]: '' })); };
 
-  const Field = ({ label, k, type = 'text', placeholder, maxLength }) => (
-    <div style={{ marginBottom: '14px' }}>
-      <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-2)', marginBottom: '5px', fontWeight: '500' }}>{label}</label>
-      <input value={form[k]} onChange={e => update(k, e.target.value)} type={type} placeholder={placeholder} maxLength={maxLength}
-        style={{ borderColor: errors[k] ? 'var(--red)' : undefined }} />
-      {errors[k] && <div style={{ fontSize: '11px', color: 'var(--red)', marginTop: '3px' }}>{errors[k]}</div>}
-    </div>
-  );
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(ellipse at 20% 50%, rgba(79,110,247,0.05) 0%, transparent 60%)' }} />
@@ -55,10 +63,10 @@ export default function RegisterPage() {
         <div className="card" style={{ padding: '26px' }}>
           {apiError && <div style={{ background: 'var(--red-dim)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', color: 'var(--red)', fontSize: '13px' }}>{apiError}</div>}
           <form onSubmit={handleSubmit}>
-            <Field label="Full Name" k="name" placeholder="Your full name" />
-            <Field label="Email" k="email" type="email" placeholder="your@email.com" />
-            <Field label="Password" k="password" type="password" placeholder="Min 6 characters" />
-            <Field label="Phone (10 digits)" k="phone" placeholder="9876543210" maxLength={10} />
+            <Field label="Full Name" fieldKey="name" placeholder="Your full name" value={form.name} error={errors.name} onChange={update} />
+            <Field label="Email" fieldKey="email" type="email" placeholder="your@email.com" value={form.email} error={errors.email} onChange={update} />
+            <Field label="Password" fieldKey="password" type="password" placeholder="Min 6 characters" value={form.password} error={errors.password} onChange={update} />
+            <Field label="Phone (10 digits)" fieldKey="phone" placeholder="9876543210" maxLength={10} value={form.phone} error={errors.phone} onChange={update} />
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-2)', marginBottom: '5px', fontWeight: '500' }}>Role</label>
               <select value={form.role} onChange={e => update('role', e.target.value)}>

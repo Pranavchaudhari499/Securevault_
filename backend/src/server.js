@@ -46,6 +46,24 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ success: false, message: err.message || 'Internal Server Error' });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => logger.info(`SecureVault running on port ${PORT}`));
+const DEFAULT_PORT = Number(process.env.PORT) || 5000;
+const MAX_PORT_RETRIES = 10;
+
+const startServer = (port, retriesLeft = MAX_PORT_RETRIES) => {
+  server.once('error', (error) => {
+    if (error.code === 'EADDRINUSE' && process.env.NODE_ENV === 'development' && retriesLeft > 0) {
+      const nextPort = port + 1;
+      logger.warn(`Port ${port} is in use. Retrying on port ${nextPort}...`);
+      startServer(nextPort, retriesLeft - 1);
+      return;
+    }
+
+    logger.error(`Server failed to start: ${error.message}`);
+    process.exit(1);
+  });
+
+  server.listen(port, () => logger.info(`SecureVault running on port ${port}`));
+};
+
+startServer(DEFAULT_PORT);
 module.exports = { app, io };

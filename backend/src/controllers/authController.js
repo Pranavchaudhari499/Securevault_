@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
+const logger = require('../utils/logger');
 
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || 'securevault_secret', { expiresIn: '7d' });
 
@@ -11,12 +12,14 @@ exports.register = async (req, res) => {
     if (phone && phone.length > 10) return res.status(400).json({ success: false, message: 'Phone number must be 10 digits or less' });
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ success: false, message: 'Email already registered' });
-    const upiId = role === 'user' || !role ? `${email.split('@')[0]}@securevault` : undefined;
-    const accountNumber = role === 'user' || !role ? Math.floor(1000000000 + Math.random() * 9000000000).toString() : undefined;
-    const user = await User.create({ name, email, password, role: role || 'user', phone, upiId, accountNumber });
+    const userRole = role || 'user';
+    const upiId = userRole === 'user' ? `${email.split('@')[0]}@securevault` : undefined;
+    const accountNumber = userRole === 'user' ? Math.floor(1000000000 + Math.random() * 9000000000).toString() : undefined;
+    const user = await User.create({ name, email, password, role: userRole, phone, upiId, accountNumber });
     const token = signToken(user._id);
     res.status(201).json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, upiId: user.upiId, balance: user.balance } });
   } catch (error) {
+    logger.error(`Register error: ${error.message}`, error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

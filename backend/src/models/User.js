@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Single pre-save hook that does both password hashing and riskLevel calculation
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function() {
   // Update riskLevel based on riskScore
   if (this.riskScore >= 80) this.riskLevel = 'critical';
   else if (this.riskScore >= 60) this.riskLevel = 'high';
@@ -62,8 +62,6 @@ userSchema.pre('save', async function(next) {
   if (this.isModified('password')) {
     this.password = await bcrypt.hash(this.password, 12);
   }
-
-  next();
 });
 
 userSchema.methods.comparePassword = async function(p) {

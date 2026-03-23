@@ -9,6 +9,8 @@ build/
 .env
 .env.local
 .env.*.local
+.venv/
+venv/
 
 # logs
 npm-debug.log*
@@ -33,3 +35,8 @@ Thumbs.db
 
 # coverage reports
 coverage/
+
+#python
+__pycache__/
+*.pyc
+
