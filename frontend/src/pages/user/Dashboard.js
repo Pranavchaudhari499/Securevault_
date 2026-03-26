@@ -5,67 +5,166 @@ import { userAPI, transactionAPI } from '../../services/api';
 import { getSocket } from '../../services/socket';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
-const riskColors = {
-  low: 'var(--green)',
-  medium: 'var(--amber)',
-  high: 'var(--red)',
-  critical: 'var(--red)',
+/* ─── Design tokens (override global vars for white theme) ──────────────── */
+const T = {
+  text:    '#0a0a0a',
+  text2:   '#3d3d3d',
+  text3:   '#6b6b6b',
+  text4:   '#a3a3a3',
+  border:  '#e8e8e8',
+  border2: '#d4d4d4',
+  bg:      '#ffffff',
+  bg2:     '#f7f7f7',
+  bg3:     '#f0f0f0',
+  bgHov:   '#fafafa',
+  green:   '#059669',
+  greenDim:'#ecfdf5',
+  amber:   '#d97706',
+  amberDim:'#fffbeb',
+  red:     '#dc2626',
+  redDim:  '#fef2f2',
+  blue:    '#2563eb',
+  blueDim: '#eff6ff',
+  shadow:  '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+  shadowMd:'0 4px 16px rgba(0,0,0,0.07)',
+  radius:  '12px',
+  mono:    '"DM Mono", "Roboto Mono", monospace',
 };
 
-function StatCard({ label, value, sub, color, index }) {
+/* ─── Keyframes injected once ───────────────────────────────────────────── */
+const STYLES = `
+@keyframes fadeUp   { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
+@keyframes shimmer  { from { background-position:-200% 0 } to { background-position:200% 0 } }
+@keyframes pulse    { 0%,100% { opacity:.4 } 50% { opacity:1 } }
+@keyframes flowDot  { 0%,100%{opacity:.2} 50%{opacity:1} }
+@keyframes scaleIn  { from{opacity:0;transform:scale(.97)} to{opacity:1;transform:scale(1)} }
+@keyframes spin     { to { transform:rotate(360deg) } }
+`;
+if (!document.getElementById('sv-styles')) {
+  const s = document.createElement('style');
+  s.id = 'sv-styles';
+  s.textContent = STYLES;
+  document.head.appendChild(s);
+}
+
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+const riskColor = (s) =>
+  s >= 60 ? T.red : s >= 30 ? T.amber : T.green;
+
+const statusMeta = {
+  approved:   { color: T.green,  bg: T.greenDim, label: 'Approved',   dot: T.green  },
+  blocked:    { color: T.red,    bg: T.redDim,   label: 'Blocked',    dot: T.red    },
+  flagged:    { color: T.amber,  bg: T.amberDim, label: 'Flagged',    dot: T.amber  },
+  processing: { color: T.blue,   bg: T.blueDim,  label: 'Processing', dot: T.blue   },
+  rejected:   { color: T.red,    bg: T.redDim,   label: 'Rejected',   dot: T.red    },
+  pending:    { color: T.blue,   bg: T.blueDim,  label: 'Pending',    dot: T.blue   },
+  frozen:     { color: T.blue,   bg: T.blueDim,  label: 'Frozen',     dot: T.blue   },
+};
+
+const statusIcon = {
+  approved: '+', blocked: 'x', flagged: '!',
+  processing: 'o', rejected: 'x', pending: '.', frozen: '#',
+};
+
+/* ─── Sub-components ────────────────────────────────────────────────────── */
+function Skeleton({ h = 80, r = 12 }) {
   return (
-    <div className="card" style={{
-      padding: '18px 20px',
-      position: 'relative',
-      overflow: 'hidden',
-      animation: `fadeUp 0.3s ease ${index * 0.06}s both`,
-    }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: `linear-gradient(90deg, ${color}, transparent)` }} />
-      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: 'var(--mono)', fontWeight: '500' }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: '700', color, fontFamily: 'var(--mono)', letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '5px' }}>{sub}</div>}
+    <div style={{
+      height: h, borderRadius: r,
+      background: 'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)',
+      backgroundSize: '200% 100%',
+      animation: 'shimmer 1.4s ease infinite',
+    }} />
+  );
+}
+
+function StatCard({ label, value, sub, color, index }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: T.bg,
+        border: `1px solid ${hov ? T.border2 : T.border}`,
+        borderRadius: T.radius,
+        padding: '20px 22px',
+        position: 'relative',
+        overflow: 'hidden',
+        animation: `fadeUp 0.35s cubic-bezier(.22,1,.36,1) ${index * 0.07}s both`,
+        boxShadow: hov ? T.shadowMd : T.shadow,
+        transition: 'box-shadow .2s ease, border-color .2s ease, transform .2s ease',
+        transform: hov ? 'translateY(-1px)' : 'translateY(0)',
+        cursor: 'default',
+      }}
+    >
+      {/* top accent line */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+        background: color, opacity: .7,
+        transition: 'opacity .2s',
+      }} />
+
+      <div style={{
+        fontSize: '10px', color: T.text4, marginBottom: '12px',
+        textTransform: 'uppercase', letterSpacing: '0.09em',
+        fontFamily: T.mono, fontWeight: '500',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: '26px', fontWeight: '700', color: T.text,
+        fontFamily: T.mono, letterSpacing: '-1.5px', lineHeight: 1,
+      }}>
+        <span style={{ color }}>{value}</span>
+      </div>
+      {sub && (
+        <div style={{ fontSize: '11px', color: T.text3, marginTop: '6px' }}>{sub}</div>
+      )}
     </div>
   );
 }
 
-// Transaction flow diagram component
-function TransactionFlowBadge({ status }) {
+function FlowBadge({ status }) {
   const steps = [
-    { label: 'User', icon: '👤', done: true },
-    { label: 'Gateway', icon: '🛡️', done: status !== 'processing' },
-    { label: 'Bank', icon: '🏛️', done: status === 'approved' || status === 'rejected' || status === 'blocked' },
+    { label: 'User',    done: true },
+    { label: 'Gateway', done: status !== 'processing' },
+    { label: 'Bank',    done: status === 'approved' || status === 'rejected' || status === 'blocked' },
   ];
-
-  const getStepColor = (step, i) => {
-    if (!step.done) return 'var(--text-4)';
-    if (status === 'blocked' || status === 'rejected') return i === steps.length - 1 ? 'var(--red)' : 'var(--green)';
-    if (status === 'flagged') return i === 1 ? 'var(--amber)' : i === 0 ? 'var(--green)' : 'var(--text-4)';
-    return 'var(--green)';
+  const col = (i) => {
+    if (!steps[i].done) return T.text4;
+    if (status === 'blocked' || status === 'rejected') return i === 2 ? T.red : T.green;
+    if (status === 'flagged') return i === 1 ? T.amber : i === 0 ? T.green : T.text4;
+    return T.green;
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
       {steps.map((step, i) => (
         <React.Fragment key={step.label}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
             <div style={{
-              width: '22px', height: '22px', borderRadius: '6px',
-              background: step.done ? `${getStepColor(step, i)}18` : 'var(--bg-2)',
-              border: `1px solid ${step.done ? `${getStepColor(step, i)}44` : 'var(--border)'}`,
+              width: '20px', height: '20px', borderRadius: '6px',
+              background: steps[i].done ? `${col(i)}14` : T.bg2,
+              border: `1px solid ${steps[i].done ? `${col(i)}33` : T.border}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px',
-            }}>{step.icon}</div>
-            <div style={{ fontSize: '8px', color: getStepColor(step, i), fontFamily: 'var(--mono)', fontWeight: '500' }}>{step.label}</div>
+              fontSize: '9px', fontWeight: '700', color: col(i), fontFamily: T.mono,
+            }}>
+              {i + 1}
+            </div>
+            <span style={{ fontSize: '7px', color: col(i), fontFamily: T.mono, fontWeight: '500' }}>
+              {step.label}
+            </span>
           </div>
           {i < steps.length - 1 && (
-            <div style={{ display: 'flex', gap: '2px', paddingBottom: '12px' }}>
-              {[0,1,2].map(d => (
-                <div key={d} className={step.done ? 'flow-dot' : ''} style={{
-                  width: '4px', height: '2px',
-                  borderRadius: '1px',
-                  background: step.done ? getStepColor(step, i) : 'var(--text-4)',
-                  opacity: step.done ? 0.8 : 0.3,
-                  animationDelay: step.done ? `${d * 0.25}s` : '0s',
+            <div style={{ display: 'flex', gap: '2px', paddingBottom: '12px', alignItems: 'center' }}>
+              {[0, 1, 2].map(d => (
+                <div key={d} style={{
+                  width: '4px', height: '1.5px', borderRadius: '1px',
+                  background: steps[i].done ? col(i) : T.border,
+                  opacity: steps[i].done ? 0.7 : 0.3,
+                  animation: steps[i].done ? `flowDot 1.2s ease ${d * 0.3}s infinite` : 'none',
                 }} />
               ))}
             </div>
@@ -76,28 +175,40 @@ function TransactionFlowBadge({ status }) {
   );
 }
 
-const statusStyles = {
-  approved: { badge: 'badge-green', icon: '✓', bg: 'var(--green-dim)' },
-  blocked: { badge: 'badge-red', icon: '✗', bg: 'var(--red-dim)' },
-  flagged: { badge: 'badge-amber', icon: '⚠', bg: 'var(--amber-dim)' },
-  processing: { badge: 'badge-blue', icon: '⟳', bg: 'var(--blue-dim)' },
-  rejected: { badge: 'badge-red', icon: '✗', bg: 'var(--red-dim)' },
-  pending: { badge: 'badge-blue', icon: '…', bg: 'var(--blue-dim)' },
-  frozen: { badge: 'badge-blue', icon: '❄', bg: 'var(--blue-dim)' },
-};
+function Badge({ status }) {
+  const m = statusMeta[status] || statusMeta.pending;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '4px',
+      fontSize: '10px', fontWeight: '500', fontFamily: T.mono,
+      color: m.color, background: m.bg,
+      border: `1px solid ${m.color}22`,
+      borderRadius: '5px', padding: '2px 7px',
+      textTransform: 'capitalize', letterSpacing: '.02em',
+    }}>
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: m.dot }} />
+      {status}
+    </span>
+  );
+}
 
 const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload?.length) {
-    return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px' }}>
-        <div style={{ color: 'var(--text-3)', marginBottom: '4px', fontFamily: 'var(--mono)', fontSize: '11px' }}>{label}</div>
-        <div style={{ color: 'var(--blue)', fontWeight: '600', fontFamily: 'var(--mono)' }}>₹{payload[0].value?.toLocaleString()}</div>
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: T.bg, border: `1px solid ${T.border}`,
+      borderRadius: '8px', padding: '10px 14px',
+      boxShadow: T.shadowMd,
+    }}>
+      <div style={{ color: T.text3, marginBottom: '3px', fontFamily: T.mono, fontSize: '10px' }}>{label}</div>
+      <div style={{ color: T.blue, fontWeight: '600', fontFamily: T.mono, fontSize: '13px' }}>
+        Rs.{payload[0].value?.toLocaleString()}
       </div>
-    );
-  }
-  return null;
+    </div>
+  );
 };
 
+/* ─── Main Component ────────────────────────────────────────────────────── */
 export default function UserDashboard() {
   const { user, updateUser } = useAuth();
   const [profile, setProfile] = useState(null);
@@ -143,243 +254,273 @@ export default function UserDashboard() {
     setTopUpLoading(true); setTopUpMsg('');
     try {
       await transactionAPI.topUp({ amount: topUpAmount });
-      setTopUpMsg(`₹${topUpAmount} added successfully`);
+      setTopUpMsg(`Rs.${topUpAmount} added successfully`);
       setTopUpAmount('');
       load();
     } catch (e) { setTopUpMsg(e.message || 'Failed'); }
     setTopUpLoading(false);
   };
 
+  const chartData = txns
+    .filter(t => t.status === 'approved' && t.amount > 0)
+    .slice(-12)
+    .map(t => ({
+      name: new Date(t.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+      amount: t.amount,
+    }));
+
+  /* ── Loading skeleton ─────────────────────────────────────────────────── */
   if (loading) {
     return (
       <Layout>
-        <div style={{ maxWidth: '960px' }}>
-          <div className="grid-4" style={{ marginBottom: '24px' }}>
-            {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: '90px', borderRadius: '16px' }} />)}
+        <div style={{ maxWidth: '960px', padding: '0 4px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '20px' }}>
+            {[1,2,3,4].map(i => <Skeleton key={i} h={90} />)}
           </div>
-          <div className="grid-2" style={{ marginBottom: '24px' }}>
-            {[1,2].map(i => <div key={i} className="skeleton" style={{ height: '180px', borderRadius: '16px' }} />)}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '12px', marginBottom: '20px' }}>
+            <Skeleton h={160} /><Skeleton h={160} />
           </div>
-          <div className="skeleton" style={{ height: '300px', borderRadius: '16px' }} />
+          <Skeleton h={280} />
         </div>
       </Layout>
     );
   }
 
-  const riskColor = riskColors[profile?.riskLevel] || 'var(--green)';
-  const chartData = txns
-    .filter(t => t.amount > 0 && t.status === 'approved')
-    .slice(0, 10)
-    .reverse()
-    .map((t, i) => ({ name: `T${i + 1}`, amount: t.amount }));
+  const riskLevel = profile?.riskLevel || user?.riskLevel || 'low';
+  const riskScore = profile?.riskScore ?? user?.riskScore ?? 0;
+  const balance   = profile?.balance   ?? user?.balance   ?? 0;
 
+  /* ── UI ───────────────────────────────────────────────────────────────── */
   return (
     <Layout>
       <div style={{ maxWidth: '960px' }}>
-        {/* Status banners */}
-        {(profile?.isSuspended || profile?.status === 'blocked') && (
-          <div className="fade-in" style={{
-            background: 'var(--red-dim)',
-            border: '1px solid rgba(244,63,94,0.2)',
-            borderRadius: '14px',
-            padding: '16px 20px',
-            marginBottom: '24px',
-            display: 'flex', alignItems: 'flex-start', gap: '14px',
-          }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(244,63,94,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '16px' }}>🔒</div>
+
+        {/* ── Page header ── */}
+        <div style={{ marginBottom: '28px', animation: 'fadeUp .3s ease both' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <div style={{ fontWeight: '700', color: 'var(--red)', fontSize: '13px', marginBottom: '3px' }}>Account Suspended</div>
-              <div style={{ color: 'var(--text-2)', fontSize: '13px', lineHeight: 1.5 }}>{profile?.suspendedReason}</div>
-              <div style={{ color: 'var(--text-3)', fontSize: '11px', marginTop: '5px', fontFamily: 'var(--mono)' }}>
-                Contact your bank to reactivate.{profile?.suspendedAt ? ` Suspended: ${new Date(profile.suspendedAt).toLocaleString()}` : ''}
-              </div>
+              <h2 style={{
+                fontSize: '22px', fontWeight: '600', color: T.text,
+                letterSpacing: '-0.4px', marginBottom: '2px',
+              }}>
+                Overview
+              </h2>
+              <p style={{ fontSize: '13px', color: T.text3 }}>
+                Welcome back, {profile?.name || user?.name || 'User'}
+              </p>
+            </div>
+
+            {/* Security status pill */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: T.bg2, border: `1px solid ${T.border}`,
+              borderRadius: '99px', padding: '6px 14px',
+              fontSize: '12px', color: T.text3,
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span style={{ fontFamily: T.mono, fontWeight: '500', color: T.text2 }}>Secured by Vault Gateway</span>
             </div>
           </div>
-        )}
-
-        {profile?.status === 'flagged' && !profile?.isSuspended && (
-          <div className="fade-in" style={{
-            background: 'var(--amber-dim)',
-            border: '1px solid rgba(245,158,11,0.2)',
-            borderRadius: '14px',
-            padding: '14px 18px',
-            marginBottom: '24px',
-            display: 'flex', alignItems: 'center', gap: '12px',
-          }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '14px' }}>⚠️</div>
-            <div>
-              <div style={{ fontWeight: '600', color: 'var(--amber)', fontSize: '13px', marginBottom: '2px' }}>Account Flagged</div>
-              <div style={{ color: 'var(--text-2)', fontSize: '12px' }}>Your account has been flagged for suspicious activity. Some transactions may be restricted.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Stats */}
-        <div className="grid-4" style={{ marginBottom: '24px' }}>
-          <StatCard index={0} label="Available Balance" value={`₹${(profile?.balance || 0).toLocaleString()}`} sub={profile?.frozenBalance > 0 ? `₹${profile.frozenBalance} frozen` : 'No holds'} color="var(--blue)" />
-          <StatCard index={1} label="Risk Score" value={profile?.riskScore || 0} sub={(profile?.riskLevel || 'low').toUpperCase()} color={riskColor} />
-          <StatCard index={2} label="Transactions" value={profile?.behaviorProfile?.totalTransactions || 0} sub="Lifetime total" color="var(--purple)" />
-          <StatCard index={3} label="Avg Transaction" value={`₹${Math.round(profile?.behaviorProfile?.avgTransactionAmount || 0).toLocaleString()}`} sub="Spending baseline" color="var(--cyan)" />
         </div>
 
-        <div className="grid-2" style={{ marginBottom: '24px' }}>
-          {/* Risk gauge */}
-          <div className="card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ fontFamily: 'var(--font-display)' }}>Security Risk</h3>
-              <span className={`badge badge-${profile?.riskScore >= 60 ? 'red' : profile?.riskScore >= 35 ? 'amber' : 'green'}`}>
-                {(profile?.riskLevel || 'low').toUpperCase()}
-              </span>
+        {/* ── Stat cards ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))',
+          gap: '12px',
+          marginBottom: '20px',
+        }}>
+          <StatCard
+            index={0} label="Available Balance"
+            value={`Rs.${balance.toLocaleString()}`}
+            sub="Accessible funds"
+            color={T.blue}
+          />
+          <StatCard
+            index={1} label="Risk Score"
+            value={riskScore}
+            sub={`Level: ${riskLevel}`}
+            color={riskColor(riskScore)}
+          />
+          <StatCard
+            index={2} label="Transactions"
+            value={txns.length}
+            sub={`${txns.filter(t => t.status === 'approved').length} approved`}
+            color={T.green}
+          />
+          <StatCard
+            index={3} label="Blocked"
+            value={txns.filter(t => t.status === 'blocked' || t.status === 'rejected').length}
+            sub="Fraud prevented"
+            color={T.red}
+          />
+        </div>
+
+        {/* ── Middle row: frozen alert + topup/flow ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '12px', marginBottom: '20px' }}>
+
+          {/* Account status */}
+          <div style={{
+            background: T.bg, border: `1px solid ${T.border}`,
+            borderRadius: T.radius, padding: '20px 22px',
+            boxShadow: T.shadow,
+            animation: 'fadeUp .4s ease .15s both',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '500', color: T.text2 }}>Account Status</span>
+              <Badge status={profile?.status || 'active'} />
             </div>
 
-            {/* Gauge visual */}
-            <div style={{ position: 'relative', marginBottom: '12px' }}>
-              <div style={{ height: '8px', background: 'var(--bg-2)', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                <div style={{
-                  height: '100%',
-                  width: `${profile?.riskScore || 0}%`,
-                  borderRadius: '6px',
-                  background: `linear-gradient(90deg, var(--green) 0%, var(--amber) 50%, var(--red) 100%)`,
-                  backgroundSize: `${(1 / ((profile?.riskScore || 1) / 100)) * 100}% 100%`,
-                  transition: 'width 0.8s cubic-bezier(0.4,0,0.2,1)',
-                }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>
-                <span>SAFE</span>
-                <span style={{ color: riskColor, fontWeight: '700' }}>{profile?.riskScore || 0} / 100</span>
-                <span>CRITICAL</span>
-              </div>
-            </div>
-
-            {profile?.mlFlagReasons?.length > 0 && (
-              <div style={{ background: 'var(--amber-dim)', borderRadius: '10px', padding: '10px 12px', border: '1px solid rgba(245,158,11,0.15)', marginTop: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--amber)', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ML Signals</div>
-                {profile.mlFlagReasons.slice(0, 2).map((r, i) => (
-                  <div key={i} style={{ color: 'var(--text-2)', fontSize: '12px', marginTop: '3px', display: 'flex', gap: '6px', lineHeight: 1.4 }}>
-                    <span style={{ color: 'var(--amber)', flexShrink: 0 }}>—</span>{r}
+            {profile?.frozenBalance > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: '10px',
+                background: T.amberDim, border: `1px solid ${T.amber}22`,
+                borderRadius: '8px', padding: '12px 14px', marginBottom: '14px',
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="2" style={{ flexShrink: 0, marginTop: '1px' }}>
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '500', color: T.amber, marginBottom: '2px' }}>Funds Frozen</div>
+                  <div style={{ fontSize: '11px', color: T.text3 }}>
+                    Rs.{profile.frozenBalance.toLocaleString()} pending gateway review
                   </div>
-                ))}
+                </div>
               </div>
             )}
 
-            {/* Account details */}
-            <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ background: 'var(--bg-2)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'var(--mono)', marginBottom: '3px' }}>ACCOUNT</div>
-                <div style={{ fontSize: '12px', fontFamily: 'var(--mono)', color: 'var(--text-2)' }}>{profile?.accountNumber || '-'}</div>
+            {profile?.isSuspended && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: '10px',
+                background: T.redDim, border: `1px solid ${T.red}22`,
+                borderRadius: '8px', padding: '12px 14px',
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" style={{ flexShrink: 0, marginTop: '1px' }}>
+                  <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '500', color: T.red, marginBottom: '2px' }}>Account Suspended</div>
+                  <div style={{ fontSize: '11px', color: T.text3 }}>Contact support to resolve</div>
+                </div>
               </div>
-              <div style={{ background: 'var(--bg-2)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'var(--mono)', marginBottom: '3px' }}>UPI ID</div>
-                <div style={{ fontSize: '12px', fontFamily: 'var(--mono)', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.upiId || '-'}</div>
+            )}
+
+            {/* Risk bar */}
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '6px' }}>
+                <span style={{ color: T.text3 }}>Risk Assessment</span>
+                <span style={{ fontFamily: T.mono, fontWeight: '600', color: riskColor(riskScore) }}>{riskScore}/100</span>
+              </div>
+              <div style={{ height: '4px', background: T.bg3, borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', width: `${riskScore}%`,
+                  background: riskColor(riskScore),
+                  borderRadius: '2px',
+                  transition: 'width .6s cubic-bezier(.22,1,.36,1)',
+                }} />
               </div>
             </div>
           </div>
 
-          {/* Balance & Top-up */}
-          <div className="card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <h3 style={{ fontFamily: 'var(--font-display)' }}>Wallet</h3>
-              <button
-                className={`btn ${showTopUp ? 'btn-ghost' : 'btn-primary'}`}
-                style={{ fontSize: '12px', padding: '5px 14px' }}
-                onClick={() => { setShowTopUp(!showTopUp); setTopUpMsg(''); }}
-              >
-                {showTopUp ? 'Cancel' : '+ Add Funds'}
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '34px', fontWeight: '800', color: 'var(--text)', fontFamily: 'var(--mono)', letterSpacing: '-1.5px', lineHeight: 1.1 }}>
-                ₹{(profile?.balance || 0).toLocaleString()}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '4px' }}>Available balance</div>
-            </div>
-
+          {/* Top-up / flow panel */}
+          <div style={{
+            background: T.bg, border: `1px solid ${T.border}`,
+            borderRadius: T.radius, padding: '20px 22px',
+            boxShadow: T.shadow,
+            animation: 'fadeUp .4s ease .2s both',
+          }}>
             {showTopUp ? (
-              <div className="fade-in">
-                {/* Quick amounts */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px' }}>
-                  {[1000, 5000, 10000, 25000].map(a => (
-                    <button
-                      key={a}
-                      type="button"
-                      onClick={() => setTopUpAmount(String(a))}
-                      style={{
-                        background: topUpAmount === String(a) ? 'var(--blue-dim)' : 'var(--bg-2)',
-                        border: `1px solid ${topUpAmount === String(a) ? 'rgba(79,110,247,0.3)' : 'var(--border)'}`,
-                        borderRadius: '8px',
-                        padding: '7px 4px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontFamily: 'var(--mono)',
-                        color: topUpAmount === String(a) ? 'var(--blue)' : 'var(--text-2)',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      +{(a / 1000).toFixed(0)}K
-                    </button>
-                  ))}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '500', color: T.text2 }}>Add Funds</span>
+                  <button
+                    onClick={() => { setShowTopUp(false); setTopUpMsg(''); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.text3, fontSize: '18px', lineHeight: 1, padding: '0 2px' }}
+                  >
+                    &times;
+                  </button>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                   <input
                     value={topUpAmount}
                     onChange={e => setTopUpAmount(e.target.value)}
-                    type="number"
-                    placeholder="Custom amount"
-                    min="1" max="100000"
-                    style={{ fontSize: '13px' }}
+                    type="number" min="1" placeholder="Amount"
+                    style={{
+                      flex: 1, padding: '9px 12px',
+                      border: `1px solid ${T.border}`, borderRadius: '8px',
+                      fontFamily: T.mono, fontSize: '13px',
+                      color: T.text, background: T.bg,
+                      outline: 'none',
+                    }}
                   />
                   <button
-                    className="btn btn-primary"
                     onClick={handleTopUp}
                     disabled={topUpLoading}
-                    style={{ whiteSpace: 'nowrap', padding: '9px 16px', fontSize: '13px' }}
+                    style={{
+                      padding: '9px 16px',
+                      background: T.blue, color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      fontWeight: '500', fontSize: '13px',
+                      cursor: topUpLoading ? 'not-allowed' : 'pointer',
+                      opacity: topUpLoading ? .7 : 1,
+                      whiteSpace: 'nowrap',
+                      transition: 'opacity .15s',
+                    }}
                   >
-                    {topUpLoading ? <span className="spin" style={{ width: '13px', height: '13px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block' }} /> : 'Add'}
+                    {topUpLoading
+                      ? <span style={{ display:'inline-block',width:'12px',height:'12px',border:'2px solid rgba(255,255,255,.4)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .7s linear infinite' }} />
+                      : 'Add'
+                    }
                   </button>
                 </div>
                 {topUpMsg && (
-                  <div className="fade-in" style={{
-                    fontSize: '12px',
-                    color: topUpMsg.includes('success') ? 'var(--green)' : 'var(--red)',
-                    background: topUpMsg.includes('success') ? 'var(--green-dim)' : 'var(--red-dim)',
-                    padding: '8px 10px', borderRadius: '8px',
-                    border: `1px solid ${topUpMsg.includes('success') ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
+                  <div style={{
+                    fontSize: '12px', padding: '8px 10px', borderRadius: '7px',
+                    color:      topUpMsg.includes('success') ? T.green  : T.red,
+                    background: topUpMsg.includes('success') ? T.greenDim : T.redDim,
+                    border:     `1px solid ${topUpMsg.includes('success') ? T.green : T.red}22`,
+                    animation:  'fadeIn .2s ease',
                   }}>
                     {topUpMsg}
                   </div>
                 )}
               </div>
             ) : (
-              /* Transaction flow preview */
-              <div style={{ background: 'var(--bg-2)', borderRadius: '12px', padding: '14px', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Transaction Path</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div>
+                {/* Transaction flow diagram */}
+                <div style={{ fontSize: '11px', color: T.text4, fontFamily: T.mono, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '14px' }}>
+                  Transaction Path
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
                   {[
-                    { label: 'You', icon: '👤', color: 'var(--blue)' },
-                    { label: 'Gateway', icon: '🛡️', color: 'var(--purple)' },
-                    { label: 'Bank', icon: '🏛️', color: 'var(--green)' },
+                    { label: 'You',     color: T.blue,  num: '01' },
+                    { label: 'Gateway', color: '#7c3aed',num: '02' },
+                    { label: 'Bank',    color: T.green, num: '03' },
                   ].map((node, i, arr) => (
                     <React.Fragment key={node.label}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: i === 0 || i === arr.length - 1 ? '0 0 auto' : '0 0 auto' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                         <div style={{
-                          width: '32px', height: '32px',
-                          background: `${node.color}14`,
-                          border: `1px solid ${node.color}33`,
-                          borderRadius: '9px',
+                          width: '34px', height: '34px',
+                          background: `${node.color}0e`,
+                          border: `1px solid ${node.color}28`,
+                          borderRadius: '10px',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '14px',
-                        }}>{node.icon}</div>
-                        <div style={{ fontSize: '9px', color: node.color, fontFamily: 'var(--mono)', fontWeight: '500' }}>{node.label}</div>
+                          fontSize: '10px', fontWeight: '700',
+                          color: node.color, fontFamily: T.mono,
+                        }}>
+                          {node.num}
+                        </div>
+                        <span style={{ fontSize: '9px', color: T.text3, fontFamily: T.mono }}>{node.label}</span>
                       </div>
                       {i < arr.length - 1 && (
                         <div style={{ flex: 1, display: 'flex', gap: '3px', paddingBottom: '14px', alignItems: 'center', justifyContent: 'center' }}>
                           {[0, 1, 2].map(d => (
-                            <div key={d} className="flow-dot" style={{
-                              width: '4px', height: '2px',
-                              borderRadius: '1px',
-                              background: node.color,
-                              animationDelay: `${d * 0.25}s`,
+                            <div key={d} style={{
+                              width: '5px', height: '1.5px', borderRadius: '1px',
+                              background: node.color, opacity: .4,
+                              animation: `flowDot 1.4s ease ${d * 0.35}s infinite`,
                             }} />
                           ))}
                         </div>
@@ -387,101 +528,157 @@ export default function UserDashboard() {
                     </React.Fragment>
                   ))}
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '8px', textAlign: 'center' }}>
-                  All transactions are routed through the secure vault
-                </div>
+                <p style={{ fontSize: '10px', color: T.text4, textAlign: 'center', marginBottom: '14px' }}>
+                  Every transaction is validated through the secure vault layer before reaching your bank.
+                </p>
+                <button
+                  onClick={() => setShowTopUp(true)}
+                  style={{
+                    width: '100%', padding: '9px',
+                    background: T.bg2, border: `1px solid ${T.border}`,
+                    borderRadius: '8px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: '500', color: T.text2,
+                    transition: 'all .15s', fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = T.bg3; e.currentTarget.style.borderColor = T.border2; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = T.bg2; e.currentTarget.style.borderColor = T.border; }}
+                >
+                  Add Funds
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Chart */}
+        {/* ── Chart ── */}
         {chartData.length > 0 && (
-          <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontFamily: 'var(--font-display)' }}>Transaction History</h3>
-              <span style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>Last {chartData.length} approved</span>
+          <div style={{
+            background: T.bg, border: `1px solid ${T.border}`,
+            borderRadius: T.radius, padding: '20px 22px',
+            boxShadow: T.shadow, marginBottom: '20px',
+            animation: 'fadeUp .4s ease .25s both',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '500', color: T.text }}>Transaction Volume</h3>
+              <span style={{ fontSize: '10px', color: T.text4, fontFamily: T.mono }}>
+                Last {chartData.length} approved
+              </span>
             </div>
             <ResponsiveContainer width="100%" height={140}>
               <AreaChart data={chartData} margin={{ left: -10, right: 0, top: 4, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="balanceGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4f6ef7" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#4f6ef7" stopOpacity={0} />
+                  <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={T.blue} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={T.blue} stopOpacity={0}    />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="name" tick={{ fill: 'var(--text-3)', fontSize: 10, fontFamily: 'DM Mono, monospace' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text-3)', fontSize: 10, fontFamily: 'DM Mono, monospace' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="name"
+                  tick={{ fill: T.text4, fontSize: 10, fontFamily: T.mono }}
+                  axisLine={false} tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: T.text4, fontSize: 10, fontFamily: T.mono }}
+                  axisLine={false} tickLine={false}
+                />
                 <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="amount" stroke="#4f6ef7" strokeWidth={2} fill="url(#balanceGrad)" dot={false} />
+                <Area
+                  type="monotone" dataKey="amount"
+                  stroke={T.blue} strokeWidth={1.5}
+                  fill="url(#blueGrad)"
+                  dot={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
 
-        {/* Recent transactions */}
-        <div className="card">
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontFamily: 'var(--font-display)' }}>Recent Activity</h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{txns.slice(0, 8).length} transactions</span>
+        {/* ── Recent activity ── */}
+        <div style={{
+          background: T.bg, border: `1px solid ${T.border}`,
+          borderRadius: T.radius, overflow: 'hidden',
+          boxShadow: T.shadow,
+          animation: 'fadeUp .4s ease .3s both',
+        }}>
+          <div style={{
+            padding: '16px 22px', borderBottom: `1px solid ${T.border}`,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <h3 style={{ fontSize: '14px', fontWeight: '500', color: T.text }}>Recent Activity</h3>
+            <span style={{ fontSize: '10px', color: T.text4, fontFamily: T.mono }}>
+              {txns.slice(0, 8).length} entries
+            </span>
           </div>
-          <div style={{ maxHeight: '360px', overflow: 'auto' }}>
+
+          <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
             {txns.length === 0 ? (
-              <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '8px' }}>💳</div>
+              <div style={{ padding: '52px', textAlign: 'center', color: T.text4, fontSize: '13px' }}>
                 No transactions yet
               </div>
             ) : txns.slice(0, 8).map((tx, i) => {
-              const s = statusStyles[tx.status] || statusStyles.pending;
+              const m = statusMeta[tx.status] || statusMeta.pending;
+              const icon = statusIcon[tx.status] || '.';
               return (
-                <div key={tx._id} style={{
-                  display: 'flex', alignItems: 'center', gap: '14px',
-                  padding: '14px 20px',
-                  borderBottom: '1px solid var(--border)',
-                  transition: 'background 0.12s',
-                  animation: `fadeUp 0.25s ease ${i * 0.04}s both`,
-                }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                <div
+                  key={tx._id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '14px',
+                    padding: '14px 22px',
+                    borderBottom: `1px solid ${T.border}`,
+                    transition: 'background .12s',
+                    animation: `fadeUp 0.28s ease ${i * 0.04}s both`,
+                    cursor: 'default',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.bgHov}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
+                  {/* Icon */}
                   <div style={{
-                    width: '36px', height: '36px',
-                    background: s.bg,
-                    borderRadius: '10px',
-                    flexShrink: 0,
+                    width: '34px', height: '34px',
+                    background: m.bg, borderRadius: '9px', flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '14px', fontWeight: '700',
-                    color: tx.status === 'approved' ? 'var(--green)' : tx.status === 'blocked' || tx.status === 'rejected' ? 'var(--red)' : 'var(--amber)',
-                    fontFamily: 'var(--mono)',
+                    fontSize: '11px', fontWeight: '700', color: m.color, fontFamily: T.mono,
+                    border: `1px solid ${m.color}18`,
                   }}>
-                    {s.icon}
+                    {icon}
                   </div>
+
+                  {/* Label */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: '500', textTransform: 'capitalize', marginBottom: '1px' }}>
+                    <div style={{
+                      fontSize: '13px', fontWeight: '500', color: T.text,
+                      textTransform: 'capitalize', marginBottom: '1px',
+                    }}>
                       {tx.type.replace(/_/g, ' ')}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>
+                    <div style={{ fontSize: '11px', color: T.text4, fontFamily: T.mono }}>
                       {new Date(tx.createdAt).toLocaleString()}
                     </div>
                   </div>
 
-                  {/* Flow indicator */}
-                  <TransactionFlowBadge status={tx.status} />
+                  {/* Flow */}
+                  <FlowBadge status={tx.status} />
 
+                  {/* Amount + badge */}
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{
-                      fontSize: '14px', fontWeight: '700', fontFamily: 'var(--mono)', letterSpacing: '-0.5px',
-                      color: tx.status === 'blocked' || tx.status === 'rejected' ? 'var(--text-3)' : tx.status === 'flagged' ? 'var(--amber)' : 'var(--text)',
+                      fontSize: '13px', fontWeight: '600', fontFamily: T.mono,
+                      letterSpacing: '-0.5px', marginBottom: '3px',
+                      color: tx.status === 'approved' ? T.text
+                           : tx.status === 'blocked' || tx.status === 'rejected' ? T.text3
+                           : m.color,
                     }}>
-                      {tx.amount > 0 ? (tx.status === 'approved' ? `-₹${tx.amount.toLocaleString()}` : `₹${tx.amount.toLocaleString()}`) : '-'}
+                      {tx.amount > 0
+                        ? (tx.status === 'approved' ? `-Rs.${tx.amount.toLocaleString()}` : `Rs.${tx.amount.toLocaleString()}`)
+                        : '—'}
                     </div>
-                    <span className={`badge ${s.badge}`} style={{ fontSize: '10px' }}>{tx.status}</span>
+                    <Badge status={tx.status} />
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+
       </div>
     </Layout>
   );
