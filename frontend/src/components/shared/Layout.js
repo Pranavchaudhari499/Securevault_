@@ -144,7 +144,13 @@ export default function Layout({ children }) {
     return () => { socket.off('notification'); socket.off('account-blocked'); };
   }, [user]);
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = () => { 
+    logout(); 
+    // Use setTimeout to ensure state update happens before navigation
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 100);
+  };
 
   const markRead = () => {
     if (user?.role === 'user') userAPI.markRead().catch(() => {});
