@@ -27,7 +27,7 @@ function getDefaultRoute(role) {
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0f', color: '#4f6ef7', fontFamily: 'monospace', fontSize: '14px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', color: 'var(--blue)', fontFamily: 'monospace', fontSize: '14px' }}>
       Initializing SecureVault...
     </div>
   );
