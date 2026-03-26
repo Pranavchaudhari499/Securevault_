@@ -11,28 +11,42 @@ exports.getDashboard = async (req, res) => {
   try {
     const userScope = { role: 'user' };
     const blockedFilter = { role: 'user', $or: [{ status: 'blocked' }, { isSuspended: true }] };
-    const [totalTx, flaggedUsers, blockedUsers, pendingAlerts, criticalAlerts] = await Promise.all([
-      Transaction.countDocuments(),
-      User.countDocuments({ ...userScope, status: 'flagged', isSuspended: { $ne: true } }),
-      User.countDocuments(blockedFilter),
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const [totalUsers, pendingReview, fraudAlerts, approvedToday] = await Promise.all([
+      User.countDocuments({ ...userScope }),
       FraudAlert.countDocuments({ status: 'pending' }),
-      FraudAlert.countDocuments({ alertLevel: 'critical', status: { $ne: 'approved' } })
+      FraudAlert.countDocuments({ alertLevel: 'critical', status: { $ne: 'approved' } }),
+      Transaction.countDocuments({ status: 'approved', createdAt: { $gte: today, $lte: todayEnd } })
     ]);
+
     const last7 = new Date(Date.now() - 7 * 86400000);
-    const dailyStats = await Transaction.aggregate([
+    const volumeTrend = await Transaction.aggregate([
       { $match: { createdAt: { $gte: last7 } } },
-      { $group: { _id: { $dateToString: { format: '%m/%d', date: '$createdAt' } }, total: { $sum: 1 }, blocked: { $sum: { $cond: [{ $eq: ['$status', 'blocked'] }, 1, 0] } }, approved: { $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] } }, flagged: { $sum: { $cond: [{ $eq: ['$status', 'flagged'] }, 1, 0] } } } },
+      { $group: { _id: { $dateToString: { format: '%m/%d', date: '$createdAt' } }, total: { $sum: 1 }, blocked: { $sum: { $cond: [{ $eq: ['$status', 'blocked'] }, 1, 0] } }, approved: { $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] } }, rejected: { $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] } } } },
       { $sort: { _id: 1 } }
     ]);
-    const riskDistribution = await User.aggregate([
-      { $match: { role: 'user' } },
-      { $group: { _id: '$riskLevel', count: { $sum: 1 } } }
-    ]);
-    const topAlerts = await FraudAlert.find({ status: { $nin: ['approved'] } })
+
+    const pendingTransactions = await Transaction.find({ status: 'flagged' })
+      .populate('userId', 'name email riskScore status')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const recentAlerts = await FraudAlert.find({ status: { $nin: ['approved'] } })
       .populate('userId', 'name email status riskScore')
       .sort({ fraudScore: -1, suspiciousActivityCount: -1 })
       .limit(5);
-    res.json({ success: true, stats: { totalTx, flaggedUsers, blockedUsers, pendingAlerts, criticalAlerts }, dailyStats, riskDistribution, topAlerts });
+
+    res.json({
+      success: true,
+      stats: { totalUsers, pendingReview, fraudAlerts, approvedToday },
+      volumeTrend,
+      pendingTransactions,
+      recentAlerts
+    });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
