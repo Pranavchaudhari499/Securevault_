@@ -67,36 +67,30 @@ const transactionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-transactionSchema.pre('save', async function attachIntegrityChain(next) {
-  if (!this.isNew || this.integrity?.currentHash) return next();
+transactionSchema.pre('save', async function attachIntegrityChain() {
+  if (!this.isNew || this.integrity?.currentHash) return;
 
-  try {
-    if (!this.createdAt) this.createdAt = new Date();
+  if (!this.createdAt) this.createdAt = new Date();
 
-    const previous = await this.constructor
-      .findOne({ 'integrity.currentHash': { $ne: null } })
-      .sort({ 'integrity.sequence': -1, createdAt: -1, _id: -1 })
-      .select('integrity')
-      .lean();
+  const previous = await this.constructor
+    .findOne({ 'integrity.currentHash': { $ne: null } })
+    .sort({ 'integrity.sequence': -1, createdAt: -1, _id: -1 })
+    .select('integrity')
+    .lean();
 
-    const prevHash = previous?.integrity?.currentHash || GENESIS_HASH;
-    const sequence = Number(previous?.integrity?.sequence || 0) + 1;
-    const payload = buildPayload(this, prevHash, sequence);
-    const currentHash = computeHash(payload);
+  const prevHash = previous?.integrity?.currentHash || GENESIS_HASH;
+  const sequence = Number(previous?.integrity?.sequence || 0) + 1;
+  const payload = buildPayload(this, prevHash, sequence);
+  const currentHash = computeHash(payload);
 
-    this.integrity = {
-      sequence,
-      prevHash,
-      currentHash,
-      algorithm: 'sha256',
-      version: 'v1',
-      verifiedAt: new Date(),
-    };
-
-    return next();
-  } catch (error) {
-    return next(error);
-  }
+  this.integrity = {
+    sequence,
+    prevHash,
+    currentHash,
+    algorithm: 'sha256',
+    version: 'v1',
+    verifiedAt: new Date(),
+  };
 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);
