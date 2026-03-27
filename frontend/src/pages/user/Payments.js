@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/shared/Layout';
+import { useAuth } from '../../context/AuthContext';
 import { transactionAPI, userAPI } from '../../services/api';
 import { getSocket } from '../../services/socket';
 
@@ -218,6 +219,7 @@ function TransactionFlowIndicator({ status }) {
 
 /* ─── Main ──────────────────────────────────────────────────────────────── */
 export default function Payments() {
+  const { updateUser } = useAuth();
   const [tab, setTab] = useState('upi');
   const [form, setForm] = useState({ recipientUpi: '', recipientAccount: '', amount: '', description: '', billType: 'electricity' });
   const [loading, setLoading] = useState(false);
@@ -241,7 +243,7 @@ export default function Payments() {
     if (tab === 'balance') { fetchBalance(); return; }
     setLoading(true); setError(''); setResult(null);
     try {
-      const typeMap = { upi: 'upi_payment', transfer: 'bank_transfer', bill: 'bill_payment', withdrawal: 'withdrawal' };
+      const typeMap = { upi: 'upi_payment', transfer: 'bank_transfer', bill: 'bill_payment'};
       const d = await transactionAPI.create({
         type: typeMap[tab],
         amount: form.amount,
@@ -250,6 +252,7 @@ export default function Payments() {
         description: form.description,
       });
       setResult(d);
+      if (d.userStatus) updateUser(d.userStatus);
     } catch (e) { setError(e.message || 'Transaction failed'); }
     setLoading(false);
   };
@@ -258,7 +261,6 @@ export default function Payments() {
     { id: 'upi',        label: 'UPI'       },
     { id: 'transfer',   label: 'Transfer'  },
     { id: 'bill',       label: 'Bill Pay'  },
-    { id: 'withdrawal', label: 'Withdraw'  },
     { id: 'balance',    label: 'Balance'   },
   ];
 

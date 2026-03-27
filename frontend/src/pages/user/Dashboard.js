@@ -373,6 +373,44 @@ export default function UserDashboard() {
               <Badge status={profile?.status || 'active'} />
             </div>
 
+            {/* UPI ID */}
+            {(profile?.upiId || user?.upiId) && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: T.blueDim, border: `1px solid ${T.blue}18`,
+                borderRadius: '8px', padding: '10px 14px', marginBottom: '14px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2" style={{ flexShrink: 0 }}>
+                    <rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/>
+                  </svg>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '10px', color: T.text4, fontFamily: T.mono, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '1px' }}>UPI ID</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: T.blue, fontFamily: T.mono, letterSpacing: '-0.3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {profile?.upiId || user?.upiId}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(profile?.upiId || user?.upiId); }}
+                  title="Copy UPI ID"
+                  style={{
+                    background: 'none', border: `1px solid ${T.blue}22`, borderRadius: '6px',
+                    padding: '4px 8px', cursor: 'pointer', color: T.blue, fontSize: '10px',
+                    fontFamily: T.mono, fontWeight: '500', transition: 'all .15s',
+                    display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = `${T.blue}12`; e.currentTarget.style.borderColor = `${T.blue}44`; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = `${T.blue}22`; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  Copy
+                </button>
+              </div>
+            )}
+
             {profile?.frozenBalance > 0 && (
               <div style={{
                 display: 'flex', alignItems: 'flex-start', gap: '10px',

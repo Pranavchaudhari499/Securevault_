@@ -6,7 +6,7 @@ const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('sv_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
-  config.headers['x-request-nonce'] = `${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
+  config.headers['x-request-nonce'] = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   config.headers['x-device-fingerprint'] = getDeviceFingerprint();
   return config;
 });

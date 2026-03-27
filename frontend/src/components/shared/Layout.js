@@ -110,7 +110,7 @@ function LogoutIcon({ size = 15 }) {
 }
 
 export default function Layout({ children }) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
@@ -120,6 +120,14 @@ export default function Layout({ children }) {
 
   const nav = navConfigs[user?.role] || [];
   const meta = portalMeta[user?.role] || portalMeta.user;
+
+  // Fetch latest balance and sync to context
+  const refreshBalance = () => {
+    if (user?.role !== 'user') return;
+    userAPI.getProfile().then(d => {
+      if (d?.user) updateUser({ balance: d.user.balance, riskScore: d.user.riskScore, riskLevel: d.user.riskLevel });
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     if (user?.role === 'user') {
@@ -136,12 +144,16 @@ export default function Layout({ children }) {
     socket.on('notification', (n) => {
       setNotifications(p => [{ ...n, createdAt: new Date(), read: false }, ...p]);
       setUnread(p => p + 1);
+      refreshBalance();
     });
     socket.on('account-blocked', (d) => {
       setNotifications(p => [{ message: d.message, type: 'blocked', createdAt: new Date(), read: false }, ...p]);
       setUnread(p => p + 1);
+      refreshBalance();
     });
-    return () => { socket.off('notification'); socket.off('account-blocked'); };
+    socket.on('transaction-result', refreshBalance);
+    socket.on('balance-update', refreshBalance);
+    return () => { socket.off('notification'); socket.off('account-blocked'); socket.off('transaction-result'); socket.off('balance-update'); };
   }, [user]);
 
   const handleLogout = () => { 
