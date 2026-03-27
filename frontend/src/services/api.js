@@ -3,11 +3,37 @@ import axios from 'axios';
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 
-api.interceptors.request.use((config) => {
+/* ── Real public IP detection ────────────────────────────────── */
+let cachedPublicIp = null;
+
+async function fetchPublicIp() {
+  if (cachedPublicIp) return cachedPublicIp;
+  try {
+    const res = await axios.get('https://api.ipify.org?format=json', { timeout: 3000 });
+    cachedPublicIp = res.data.ip;
+  } catch {
+    try {
+      const res = await axios.get('https://api64.ipify.org?format=json', { timeout: 3000 });
+      cachedPublicIp = res.data.ip;
+    } catch {
+      cachedPublicIp = null;
+    }
+  }
+  return cachedPublicIp;
+}
+
+fetchPublicIp();
+
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem('sv_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   config.headers['x-request-nonce'] = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   config.headers['x-device-fingerprint'] = getDeviceFingerprint();
+
+  // Attach real public IP for security tracking
+  const publicIp = cachedPublicIp || await fetchPublicIp();
+  if (publicIp) config.headers['x-client-ip'] = publicIp;
+
   return config;
 });
 

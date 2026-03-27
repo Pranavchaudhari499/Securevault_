@@ -8,11 +8,38 @@ import axios from 'axios';
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 
-api.interceptors.request.use((config) => {
+/* ── Real public IP detection ────────────────────────────────── */
+let cachedPublicIp = null;
+
+async function fetchPublicIp() {
+  if (cachedPublicIp) return cachedPublicIp;
+  try {
+    const res = await axios.get('https://api.ipify.org?format=json', { timeout: 3000 });
+    cachedPublicIp = res.data.ip;
+  } catch {
+    try {
+      const res = await axios.get('https://api64.ipify.org?format=json', { timeout: 3000 });
+      cachedPublicIp = res.data.ip;
+    } catch {
+      cachedPublicIp = null;
+    }
+  }
+  return cachedPublicIp;
+}
+
+// Pre-fetch on load so it's ready before first transaction
+fetchPublicIp();
+
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem('sv_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
-  config.headers['x-request-nonce']        = `${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
-  config.headers['x-device-fingerprint']   = getDeviceFingerprint();
+  config.headers['x-request-nonce'] = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  config.headers['x-device-fingerprint'] = getDeviceFingerprint();
+
+  // Attach real public IP for security tracking
+  const publicIp = cachedPublicIp || await fetchPublicIp();
+  if (publicIp) config.headers['x-client-ip'] = publicIp;
+
   return config;
 });
 
@@ -33,47 +60,47 @@ function getDeviceFingerprint() {
 }
 
 export const authAPI = {
-  login:    (d) => api.post('/auth/login', d),
+  login: (d) => api.post('/auth/login', d),
   register: (d) => api.post('/auth/register', d),
-  getMe:    ()  => api.get('/auth/me'),
+  getMe: () => api.get('/auth/me'),
 };
 
 export const transactionAPI = {
-  create:     (d) => api.post('/transactions', d),
-  getMy:      ()  => api.get('/transactions/my'),
-  getAll:     (p) => api.get('/transactions/all', { params: p }),
-  getBalance: ()  => api.get('/transactions/balance'),
-  topUp:      (d) => api.post('/transactions/topup', d),
+  create: (d) => api.post('/transactions', d),
+  getMy: () => api.get('/transactions/my'),
+  getAll: (p) => api.get('/transactions/all', { params: p }),
+  getBalance: () => api.get('/transactions/balance'),
+  topUp: (d) => api.post('/transactions/topup', d),
 };
 
 export const userAPI = {
-  getProfile:      () => api.get('/user/profile'),
-  getNotifications:() => api.get('/user/notifications'),
-  markRead:        () => api.put('/user/notifications/read'),
+  getProfile: () => api.get('/user/profile'),
+  getNotifications: () => api.get('/user/notifications'),
+  markRead: () => api.put('/user/notifications/read'),
 };
 
 export const gatewayAPI = {
-  getDashboard:      ()          => api.get('/gateway/dashboard'),
-  getUsers:          ()          => api.get('/gateway/users'),
-  getLiveTransactions:()         => api.get('/gateway/transactions/live'),
-  suspendUser:       (id, reason)=> api.put(`/gateway/users/${id}/suspend`,   { reason }),
-  unsuspendUser:     (id)        => api.put(`/gateway/users/${id}/unsuspend`),
+  getDashboard: () => api.get('/gateway/dashboard'),
+  getUsers: () => api.get('/gateway/users'),
+  getLiveTransactions: () => api.get('/gateway/transactions/live'),
+  suspendUser: (id, reason) => api.put(`/gateway/users/${id}/suspend`, { reason }),
+  unsuspendUser: (id) => api.put(`/gateway/users/${id}/unsuspend`),
 };
 
 export const bankAPI = {
-  getDashboard:      ()          => api.get('/bank/dashboard'),
-  getFraudAlerts:    (p)         => api.get('/bank/fraud-alerts', { params: p }),
-  getHighRiskUsers:  ()          => api.get('/bank/high-risk-users'),
-  getNetworkGraph:   ()          => api.get('/bank/network-graph'),
-  approveUser:       (id, notes) => api.put(`/bank/users/${id}/approve`,  { notes }),
-  unblockUser:       (id, notes) => api.put(`/bank/users/${id}/unblock`,  { notes }),
-  blockUser:         (id, notes) => api.put(`/bank/users/${id}/block`,    { notes }),
-  increaseMonitoring:(id, notes) => api.put(`/bank/users/${id}/monitor`,  { notes }),
+  getDashboard: () => api.get('/bank/dashboard'),
+  getFraudAlerts: (p) => api.get('/bank/fraud-alerts', { params: p }),
+  getHighRiskUsers: () => api.get('/bank/high-risk-users'),
+  getNetworkGraph: () => api.get('/bank/network-graph'),
+  approveUser: (id, notes) => api.put(`/bank/users/${id}/approve`, { notes }),
+  unblockUser: (id, notes) => api.put(`/bank/users/${id}/unblock`, { notes }),
+  blockUser: (id, notes) => api.put(`/bank/users/${id}/block`, { notes }),
+  increaseMonitoring: (id, notes) => api.put(`/bank/users/${id}/monitor`, { notes }),
 
   // 🔗 Blockchain endpoints
-  getBlockchainStatus:  ()               => api.get('/bank/blockchain/status'),
-  verifyOnChain:        (chainEventId)   => api.get(`/bank/blockchain/verify/${chainEventId}`),
-  getUserChainHistory:  (userId)         => api.get(`/bank/blockchain/user/${userId}/history`),
+  getBlockchainStatus: () => api.get('/bank/blockchain/status'),
+  verifyOnChain: (chainEventId) => api.get(`/bank/blockchain/verify/${chainEventId}`),
+  getUserChainHistory: (userId) => api.get(`/bank/blockchain/user/${userId}/history`),
   getBlockchainStatus: () => api.get('/bank/blockchain/status'),
   getUserChainHistory: (userId) => api.get(`/bank/blockchain/user/${userId}/history`),
   verifyOnChain: (chainEventId) => api.get(`/bank/blockchain/verify/${chainEventId}`),
