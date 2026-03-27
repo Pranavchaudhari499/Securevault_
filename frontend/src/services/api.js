@@ -38,6 +38,9 @@ export const transactionAPI = {
   getAll: (p) => api.get('/transactions/all', { params: p }),
   getBalance: () => api.get('/transactions/balance'),
   topUp: (d) => api.post('/transactions/topup', d),
+  getIntegritySummary: () => api.get('/transactions/integrity/summary'),
+  verifyIntegrity: (id) => api.get(`/transactions/integrity/verify/${id}`),
+  rebuildIntegrity: () => api.post('/transactions/integrity/rebuild'),
 };
 export const userAPI = {
   getProfile: () => api.get('/user/profile'),
@@ -60,5 +63,8 @@ export const bankAPI = {
   unblockUser: (id, notes) => api.put(`/bank/users/${id}/unblock`, { notes }),
   blockUser: (id, notes) => api.put(`/bank/users/${id}/block`, { notes }),
   increaseMonitoring: (id, notes) => api.put(`/bank/users/${id}/monitor`, { notes }),
+  getBlockchainStatus: () => api.get('/bank/blockchain/status'),
+  verifyOnChain: (chainEventId) => api.get(`/bank/blockchain/verify/${chainEventId}`),
+  getUserChainHistory: (userId) => api.get(`/bank/blockchain/user/${userId}/history`),
 };
 export default api;

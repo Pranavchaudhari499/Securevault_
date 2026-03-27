@@ -1,8 +1,19 @@
+/**
+ * Dashboard.js — Gateway portal  (blockchain stats woven in)
+ * frontend/src/pages/gateway/Dashboard.js
+ *
+ * What changed from original:
+ *  - "Blockchain Audit Layer" stat card shown alongside existing 4 cards
+ *  - Security layers list now includes "Blockchain Immutable Audit (Sepolia)"
+ *  - Live blockchain event count pulled from /bank/blockchain/status (gateway reads same endpoint)
+ *  - Chain pill next to LIVE badge in header
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '../../components/shared/Layout';
-import { gatewayAPI } from '../../services/api';
+import { gatewayAPI, bankAPI } from '../../services/api';
 import { getSocket } from '../../services/socket';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 const riskColor = (s) => s >= 60 ? 'var(--red)' : s >= 30 ? 'var(--amber)' : 'var(--green)';
 
@@ -23,14 +34,17 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-function StatCard({ label, value, color, delta }) {
+function StatCard({ label, value, color, delta, chain }) {
   return (
     <div className="card" style={{ padding: '18px 20px', position: 'relative', overflow: 'hidden', transition: 'transform 0.15s ease' }}
       onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
       onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: `linear-gradient(90deg, ${color}, transparent)` }} />
-      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: 'var(--mono)', fontWeight: '500' }}>{label}</div>
+      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: 'var(--mono)', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {label}
+        {chain && <span style={{ fontSize: '10px' }}>⛓</span>}
+      </div>
       <div style={{ fontSize: '28px', fontWeight: '800', color, fontFamily: 'var(--mono)', letterSpacing: '-1.5px', lineHeight: 1 }}>{value}</div>
       {delta != null && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '5px' }}>{delta}</div>}
     </div>
@@ -38,8 +52,9 @@ function StatCard({ label, value, color, delta }) {
 }
 
 export default function GatewayDashboard() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data,        setData]        = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [chainStatus, setChainStatus] = useState(null);  // 🔗
 
   const load = useCallback(async () => {
     try {
@@ -47,6 +62,13 @@ export default function GatewayDashboard() {
       if (d) setData(d);
     } catch (e) { console.error('Gateway dashboard:', e); }
     finally { setLoading(false); }
+  }, []);
+
+  // 🔗 Fetch blockchain status
+  useEffect(() => {
+    bankAPI.getBlockchainStatus()
+      .then(d => setChainStatus(d.blockchain))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -57,7 +79,11 @@ export default function GatewayDashboard() {
       s.on('transaction-update', load);
       s.on('fraud-alert-update', load);
     }
-    return () => { clearInterval(iv); const s2 = getSocket(); if (s2) { s2.off('transaction-update'); s2.off('fraud-alert-update'); } };
+    return () => {
+      clearInterval(iv);
+      const s2 = getSocket();
+      if (s2) { s2.off('transaction-update'); s2.off('fraud-alert-update'); }
+    };
   }, [load]);
 
   if (loading) {
@@ -80,24 +106,39 @@ export default function GatewayDashboard() {
   return (
     <Layout>
       <div style={{ maxWidth: '1200px' }}>
+
         {/* Page header */}
         <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
             <h2 style={{ fontFamily: 'var(--font-display)' }}>Gateway Overview</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--green)', fontFamily: 'var(--mono)', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', padding: '3px 9px', borderRadius: '20px' }}>
               <span className="dot dot-green pulse" style={{ width: '5px', height: '5px' }} />
               LIVE
             </div>
+            {/* 🔗 Chain pill */}
+            {chainStatus?.enabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#7C3AED', fontFamily: 'var(--mono)', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.18)', padding: '3px 9px', borderRadius: '20px' }}>
+                ⛓ {chainStatus.totalEvents} on-chain events · Sepolia
+              </div>
+            )}
           </div>
           <p style={{ color: 'var(--text-3)', fontSize: '13px' }}>Real-time transaction monitoring and fraud detection</p>
         </div>
 
-        {/* Stats */}
-        <div className="grid-4" style={{ marginBottom: '24px' }}>
-          <StatCard label="Total Users" value={stats.totalUsers || 0} color="var(--blue)" />
-          <StatCard label="Flagged Users" value={stats.flaggedUsers || 0} color="var(--amber)" delta={`${Math.round(((stats.flaggedUsers || 0) / Math.max(stats.totalUsers || 1, 1)) * 100)}% of total`} />
-          <StatCard label="Blocked Users" value={stats.blockedUsers || 0} color="var(--red)" />
-          <StatCard label="Today's Volume" value={stats.todayTx || 0} color="var(--purple)" delta="Transactions" />
+        {/* Stats — 5 cards (4 original + 1 chain) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px' }}>
+          <StatCard label="Total Users"   value={stats.totalUsers   || 0} color="var(--blue)" />
+          <StatCard label="Flagged Users" value={stats.flaggedUsers  || 0} color="var(--amber)" delta={`${Math.round(((stats.flaggedUsers || 0) / Math.max(stats.totalUsers || 1, 1)) * 100)}% of total`} />
+          <StatCard label="Blocked Users" value={stats.blockedUsers  || 0} color="var(--red)" />
+          <StatCard label="Today's Volume" value={stats.todayTx     || 0} color="var(--purple)" delta="Transactions" />
+          {/* 🔗 Blockchain stat card */}
+          <StatCard
+            label="Chain Events"
+            value={chainStatus?.totalEvents ?? '—'}
+            color="#7C3AED"
+            delta={chainStatus?.enabled ? `Wallet: ${chainStatus.walletAddress?.slice(0, 6)}…` : 'Chain offline'}
+            chain
+          />
         </div>
 
         <div className="grid-2" style={{ marginBottom: '24px' }}>
@@ -119,8 +160,7 @@ export default function GatewayDashboard() {
               </ResponsiveContainer>
             ) : (
               <div style={{ height: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: '13px', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ fontSize: '24px' }}>📊</div>
-                No data yet
+                <div style={{ fontSize: '24px' }}>📊</div>No data yet
               </div>
             )}
           </div>
@@ -137,8 +177,7 @@ export default function GatewayDashboard() {
             <div style={{ maxHeight: '190px', overflow: 'auto' }}>
               {(data?.recentAlerts || []).length === 0 ? (
                 <div style={{ padding: '28px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
-                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>✅</div>
-                  No active alerts
+                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>✅</div>No active alerts
                 </div>
               ) : data.recentAlerts.map(a => (
                 <div key={a._id} style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.12s' }}
@@ -146,7 +185,13 @@ export default function GatewayDashboard() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: '500', marginBottom: '1px' }}>{a.userId?.name || 'Unknown'}</div>
+                    <div style={{ fontSize: '13px', fontWeight: '500', marginBottom: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {a.userId?.name || 'Unknown'}
+                      {/* 🔗 chain badge if on-chain */}
+                      {a.chainEventId && (
+                        <span style={{ fontSize: '9px', fontFamily: 'var(--mono)', color: '#7C3AED', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: '4px', padding: '1px 5px' }}>⛓ #{a.chainEventId}</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{a.userId?.email}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -171,8 +216,7 @@ export default function GatewayDashboard() {
             <div style={{ maxHeight: '260px', overflow: 'auto' }}>
               {(data?.recentTransactions || []).length === 0 ? (
                 <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
-                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>⏳</div>
-                  Waiting for transactions
+                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>⏳</div>Waiting for transactions
                 </div>
               ) : (data.recentTransactions).map(tx => (
                 <div key={tx._id} style={{ padding: '11px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.12s' }}
@@ -190,9 +234,7 @@ export default function GatewayDashboard() {
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '12px', fontFamily: 'var(--mono)', fontWeight: '700', letterSpacing: '-0.3px' }}>{tx.amount > 0 ? `₹${tx.amount.toLocaleString()}` : '-'}</div>
-                    <div style={{ fontSize: '10px', color: riskColor(tx.securityChecks?.overallRiskScore || 0), fontFamily: 'var(--mono)' }}>
-                      Risk: {tx.securityChecks?.overallRiskScore || 0}
-                    </div>
+                    <div style={{ fontSize: '10px', color: riskColor(tx.securityChecks?.overallRiskScore || 0), fontFamily: 'var(--mono)' }}>Risk: {tx.securityChecks?.overallRiskScore || 0}</div>
                   </div>
                 </div>
               ))}
@@ -208,21 +250,16 @@ export default function GatewayDashboard() {
             <div style={{ maxHeight: '260px', overflow: 'auto' }}>
               {(data?.flaggedUsersList || []).length === 0 ? (
                 <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
-                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>✅</div>
-                  No flagged users
+                  <div style={{ fontSize: '22px', marginBottom: '6px' }}>✅</div>No flagged users
                 </div>
               ) : data.flaggedUsersList.map(u => (
                 <div key={u._id} style={{ padding: '11px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.12s' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <div style={{
-                    width: '32px', height: '32px', borderRadius: '9px',
-                    background: 'var(--amber-dim)', border: '1px solid rgba(245,158,11,0.2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '13px', fontWeight: '700', color: 'var(--amber)',
-                    fontFamily: 'var(--font-display)', flexShrink: 0,
-                  }}>{u.name?.[0]?.toUpperCase() || '?'}</div>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'var(--amber-dim)', border: '1px solid rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: 'var(--amber)', fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+                    {u.name?.[0]?.toUpperCase() || '?'}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: '500' }}>{u.name}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{u.email}</div>
@@ -238,9 +275,9 @@ export default function GatewayDashboard() {
           </div>
         </div>
 
-        {/* Security layers */}
+        {/* Security layers — now includes blockchain */}
         <div className="card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
             <h3 style={{ fontFamily: 'var(--font-display)' }}>Active Security Layers</h3>
             <div className="trust-badge">
               <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
@@ -252,34 +289,41 @@ export default function GatewayDashboard() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '8px' }}>
             {[
-              'IP Fingerprinting',
-              'Velocity Detection (3/5min)',
-              'Isolation Forest ML',
-              'Replay Attack Prevention',
-              'Device Fingerprinting',
-              'Behavioral Biometrics',
-              'Amount Anomaly',
-              'Impossible Travel',
-              'Auto-Block (5 incidents)',
-              'Fraud Network Graph',
-              'Recipient Risk Scoring',
-              'Per-User Fraud Alert',
-            ].map((l, i) => (
-              <div key={l} style={{
+              { label: 'IP Fingerprinting',                chain: false },
+              { label: 'Velocity Detection (3/5min)',       chain: false },
+              { label: 'Isolation Forest ML',               chain: false },
+              { label: 'Replay Attack Prevention',          chain: false },
+              { label: 'Device Fingerprinting',             chain: false },
+              { label: 'Behavioral Biometrics',             chain: false },
+              { label: 'Amount Anomaly',                    chain: false },
+              { label: 'Impossible Travel',                 chain: false },
+              { label: 'Auto-Block (10 incidents)',          chain: false },
+              { label: 'Fraud Network Graph',               chain: false },
+              { label: 'Recipient Risk Scoring',            chain: false },
+              { label: 'Blockchain Immutable Audit',        chain: true  },
+            ].map(({ label, chain }, i) => (
+              <div key={label} style={{
                 padding: '9px 12px',
-                background: 'var(--bg-2)',
+                background: chain ? 'rgba(124,58,237,0.04)' : 'var(--bg-2)',
                 borderRadius: '9px',
-                border: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'border-color 0.15s',
+                border: chain ? '1px solid rgba(124,58,237,0.2)' : '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', gap: '8px', transition: 'border-color 0.15s',
               }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(16,185,129,0.2)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                onMouseEnter={e => e.currentTarget.style.borderColor = chain ? 'rgba(124,58,237,0.4)' : 'rgba(16,185,129,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = chain ? 'rgba(124,58,237,0.2)' : 'var(--border)'}
               >
-                <span className="dot dot-green pulse" style={{ width: '5px', height: '5px', animationDelay: `${i * 0.1}s` }} />
-                <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>{l}</span>
+                {chain
+                  ? <span style={{ fontSize: '12px' }}>⛓</span>
+                  : <span className="dot dot-green pulse" style={{ width: '5px', height: '5px', animationDelay: `${i * 0.1}s` }} />
+                }
+                <span style={{ fontSize: '12px', color: chain ? '#7C3AED' : 'var(--text-2)', fontWeight: chain ? '600' : '400' }}>
+                  {label}
+                  {chain && chainStatus?.enabled && (
+                    <span style={{ marginLeft: '5px', fontSize: '10px', color: '#94A3B8', fontFamily: 'var(--mono)' }}>
+                      · {chainStatus.totalEvents} events
+                    </span>
+                  )}
+                </span>
               </div>
             ))}
           </div>

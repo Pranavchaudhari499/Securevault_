@@ -1,8 +1,18 @@
-const FraudAlert = require('../models/FraudAlert');
-const User = require('../models/User');
-const geoip = require('geoip-lite');
+/**
+ * fraudAlertService.js  (updated — blockchain integrated)
+ * Place in: backend/services/fraudAlertService.js
+ *
+ * Changes from original:
+ *  - require blockchainService
+ *  - fire logFraudEvent() after alert.save() (non-blocking)
+ *  - store chainTxHash + chainEventId on the FraudAlert document
+ */
 
-const AUTO_BLOCK_THRESHOLD = 10; // auto-block after 10 genuinely suspicious activities
+const FraudAlert = require('../models/FraudAlert');
+const User       = require('../models/User');
+const blockchain = require('./blockchainService');   // ← NEW
+
+const AUTO_BLOCK_THRESHOLD = 10;
 
 function getAlertLevel(score) {
   if (score >= 80) return 'critical';
@@ -21,109 +31,120 @@ async function upsertFraudAlert({ userId, transactionId, fraudScore, fraudReason
     if (!user) return null;
 
     const reasons = Array.isArray(fraudReasons) ? fraudReasons : [fraudReasons].filter(Boolean);
-    const level = getAlertLevel(fraudScore);
+    const level   = getAlertLevel(fraudScore);
 
-    // Build timeline event
     const timelineEvent = {
-      timestamp: new Date(),
-      event: fraudScore >= 60 ? 'High-risk transaction blocked' : 'Suspicious transaction flagged',
-      details: reasons.slice(0, 2).join('. '),
+      timestamp:  new Date(),
+      event:      fraudScore >= 60 ? 'High-risk transaction blocked' : 'Suspicious transaction flagged',
+      details:    reasons.slice(0, 2).join('. '),
       transactionId,
       deviceInfo: sessionData?.deviceId || sessionData?.browser || 'Unknown device',
-      location: sessionData?.location || sessionData?.ipAddress || 'Unknown',
-      fraudScore
+      location:   sessionData?.location || sessionData?.ipAddress || 'Unknown',
+      fraudScore,
     };
 
-    if (sessionData?.isNewDevice) timelineEvent.event = 'New device detected — ' + timelineEvent.event;
+    if (sessionData?.isNewDevice)      timelineEvent.event = 'New device detected — ' + timelineEvent.event;
     if (sessionData?.impossibleTravel) timelineEvent.event = 'Impossible travel anomaly — ' + timelineEvent.event;
 
-    // Check if alert exists for this user
     let alert = await FraudAlert.findOne({ userId });
 
     if (alert) {
-      // Update existing alert
-      alert.fraudScore = Math.max(alert.fraudScore, fraudScore);
-      alert.fraudReason = reasons[0] || alert.fraudReason;
-      alert.fraudReasons = [...new Set([...alert.fraudReasons, ...reasons])].slice(0, 10);
-      alert.alertLevel = getAlertLevel(alert.fraudScore);
+      alert.fraudScore             = Math.max(alert.fraudScore, fraudScore);
+      alert.fraudReason            = reasons[0] || alert.fraudReason;
+      alert.fraudReasons           = [...new Set([...alert.fraudReasons, ...reasons])].slice(0, 10);
+      alert.alertLevel             = getAlertLevel(alert.fraudScore);
       alert.suspiciousActivityCount += 1;
       alert.lastSuspiciousTransactionId = transactionId;
-      alert.updatedAt = new Date();
+      alert.updatedAt              = new Date();
       alert.timeline.push(timelineEvent);
       if (alert.timeline.length > 50) alert.timeline = alert.timeline.slice(-50);
 
-      // Update device/location info
-      if (sessionData?.deviceId) alert.deviceInfo = { deviceId: sessionData.deviceId, browser: sessionData.browser, userAgent: sessionData.userAgent, isNewDevice: !!sessionData.isNewDevice };
+      if (sessionData?.deviceId) alert.deviceInfo   = { deviceId: sessionData.deviceId, browser: sessionData.browser, userAgent: sessionData.userAgent, isNewDevice: !!sessionData.isNewDevice };
       if (sessionData?.location) alert.locationInfo = { ip: sessionData.ipAddress, city: sessionData.location, isNewLocation: !!sessionData.isNewLocation, impossibleTravel: !!sessionData.impossibleTravel, lastKnownLocation: sessionData.location };
-      if (velocitySnapshot) alert.velocitySnapshot = velocitySnapshot;
-
+      if (velocitySnapshot)      alert.velocitySnapshot = velocitySnapshot;
     } else {
-      // Create new alert
       alert = new FraudAlert({
         userId,
         lastSuspiciousTransactionId: transactionId,
         fraudScore,
-        fraudReason: reasons[0] || 'Suspicious activity',
+        fraudReason:  reasons[0] || 'Suspicious activity',
         fraudReasons: reasons,
-        alertLevel: level,
+        alertLevel:   level,
         suspiciousActivityCount: 1,
         status: 'pending',
-        deviceInfo: { deviceId: sessionData?.deviceId, browser: sessionData?.browser, userAgent: sessionData?.userAgent, isNewDevice: !!sessionData?.isNewDevice },
+        deviceInfo:   { deviceId: sessionData?.deviceId, browser: sessionData?.browser, userAgent: sessionData?.userAgent, isNewDevice: !!sessionData?.isNewDevice },
         locationInfo: { ip: sessionData?.ipAddress, city: sessionData?.location, isNewLocation: !!sessionData?.isNewLocation, impossibleTravel: !!sessionData?.impossibleTravel },
         velocitySnapshot: velocitySnapshot || {},
-        timeline: [timelineEvent]
+        timeline: [timelineEvent],
       });
     }
 
-    // Auto-block logic
+    // ── Auto-block logic ────────────────────────────────────────────────────
     let autoBlocked = false;
-    if (alert.suspiciousActivityCount >= AUTO_BLOCK_THRESHOLD && user.status !== 'blocked') {
-      const blockReason = `Auto-blocked: ${alert.suspiciousActivityCount} suspicious activities detected. Last reason: ${reasons[0]}`;
-      await User.findByIdAndUpdate(userId, {
-        status: 'blocked',
-        isSuspended: true,
-        suspendedReason: blockReason,
-        suspendedAt: new Date(),
-        flaggedActivityCount: alert.suspiciousActivityCount
-      });
-      alert.status = 'auto_blocked';
-      alert.autoBlockReason = blockReason;
-      alert.timeline.push({
-        timestamp: new Date(),
-        event: 'USER AUTOMATICALLY BLOCKED',
-        details: blockReason,
-        fraudScore: alert.fraudScore
-      });
-      autoBlocked = true;
+    let finalAction = fraudScore >= 60 ? 'blocked' : 'flagged';
 
-      // Notify user
+    if (alert.suspiciousActivityCount >= AUTO_BLOCK_THRESHOLD && user.status !== 'blocked') {
+      const blockReason = `Auto-blocked: ${alert.suspiciousActivityCount} suspicious activities. Last: ${reasons[0]}`;
+      await User.findByIdAndUpdate(userId, {
+        status:               'blocked',
+        isSuspended:          true,
+        suspendedReason:      blockReason,
+        suspendedAt:          new Date(),
+        flaggedActivityCount: alert.suspiciousActivityCount,
+      });
+      alert.status          = 'auto_blocked';
+      alert.autoBlockReason = blockReason;
+      alert.timeline.push({ timestamp: new Date(), event: 'USER AUTOMATICALLY BLOCKED', details: blockReason, fraudScore: alert.fraudScore });
+      autoBlocked  = true;
+      finalAction  = 'auto_blocked';
+
       await User.findByIdAndUpdate(userId, {
         $push: { notifications: { message: `Your account has been blocked due to repeated suspicious activity (${alert.suspiciousActivityCount} incidents). Contact your bank.`, type: 'blocked', createdAt: new Date() } }
       });
-
       safeEmit(io, `user-${userId}`, 'account-blocked', { message: blockReason });
+
     } else if (user.status === 'active') {
       await User.findByIdAndUpdate(userId, {
-        status: 'flagged',
-        riskScore: Math.max(user.riskScore, fraudScore),
-        flaggedActivityCount: alert.suspiciousActivityCount,
-        lastSuspiciousActivity: new Date(),
-        mlFlagReasons: reasons
+        status:                  'flagged',
+        riskScore:               Math.max(user.riskScore, fraudScore),
+        flaggedActivityCount:    alert.suspiciousActivityCount,
+        lastSuspiciousActivity:  new Date(),
+        mlFlagReasons:           reasons,
       });
     } else {
       await User.findByIdAndUpdate(userId, {
-        riskScore: Math.max(user.riskScore, fraudScore),
-        flaggedActivityCount: alert.suspiciousActivityCount,
+        riskScore:              Math.max(user.riskScore, fraudScore),
+        flaggedActivityCount:   alert.suspiciousActivityCount,
         lastSuspiciousActivity: new Date(),
-        mlFlagReasons: reasons
+        mlFlagReasons:          reasons,
       });
     }
 
     await alert.save();
 
-    // Emit to bank and gateway in real time
-    const populated = await FraudAlert.findById(alert._id).populate('userId', 'name email upiId accountNumber riskScore status flaggedActivityCount velocity');
-    safeEmit(io, 'bank-room', 'fraud-alert-update', populated);
+    // ── 🔗 Blockchain: fire-and-forget after DB save ────────────────────────
+    // We don't await this — it must never block the API response.
+    blockchain.logFraudEvent({
+      userId:        userId.toString(),
+      action:        finalAction,
+      riskScore:     fraudScore,
+      mongoTxId:     (transactionId || alert._id).toString(),
+      primaryReason: reasons[0] || 'Suspicious activity',
+    }).then(result => {
+      if (result?.chainEventId) {
+        // Store the chain proof on the FraudAlert for bank portal verification
+        FraudAlert.findByIdAndUpdate(alert._id, {
+          chainTxHash:  result.txHash,
+          chainEventId: result.chainEventId,
+        }).catch(() => {});
+      }
+    });
+
+    const populated = await FraudAlert.findById(alert._id)
+      .populate('userId', 'name email upiId accountNumber riskScore status flaggedActivityCount velocity behaviorProfile')
+      .populate('lastSuspiciousTransactionId');
+
+    safeEmit(io, 'bank-room',    'fraud-alert-update', populated);
     safeEmit(io, 'gateway-room', 'fraud-alert-update', populated);
 
     return { alert: populated, autoBlocked };

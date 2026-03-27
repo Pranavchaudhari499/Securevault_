@@ -4,6 +4,7 @@ const User = require('../models/User');
 const securityEngine = require('../services/securityEngine');
 const { upsertFraudAlert } = require('../services/fraudAlertService');
 const mlService = require('../services/mlService');
+const { GENESIS_HASH, buildPayload, computeHash, verifyPayload } = require('../services/integrityChainService');
 
 function safeEmit(io, room, event, data) {
   try { if (io && typeof io.to === 'function') io.to(room).emit(event, data); } catch (e) {}
@@ -177,4 +178,99 @@ exports.getBalanceInstant = async (req, res) => {
     const user = await User.findById(req.user.id).select('balance frozenBalance riskScore riskLevel status');
     res.json({ success: true, balance: user.balance, frozenBalance: user.frozenBalance || 0, status: user.status });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+};
+
+exports.getIntegritySummary = async (req, res) => {
+  try {
+    const filter = req.user.role === 'user' ? { userId: req.user.id } : {};
+
+    const [total, withIntegrity, latest] = await Promise.all([
+      Transaction.countDocuments(filter),
+      Transaction.countDocuments({ ...filter, 'integrity.currentHash': { $ne: null } }),
+      Transaction.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .select('transactionId status createdAt integrity')
+        .lean(),
+    ]);
+
+    res.json({
+      success: true,
+      integrity: {
+        total,
+        withIntegrity,
+        coverage: total > 0 ? Number(((withIntegrity / total) * 100).toFixed(2)) : 0,
+        latestSequence: latest?.integrity?.sequence || 0,
+        latestHash: latest?.integrity?.currentHash || null,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.verifyIntegrityTransaction = async (req, res) => {
+  try {
+    const tx = await Transaction.findById(req.params.id)
+      .populate('userId', 'name email')
+      .lean();
+
+    if (!tx) return res.status(404).json({ success: false, message: 'Transaction not found' });
+    if (req.user.role === 'user' && String(tx.userId?._id || tx.userId) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const verification = verifyPayload(tx, tx.integrity);
+    res.json({ success: true, verification, transaction: tx });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.rebuildIntegrityChain = async (req, res) => {
+  try {
+    const docs = await Transaction.find({})
+      .sort({ createdAt: 1, _id: 1 })
+      .select('_id transactionId userId recipientId type amount status gatewayDecision bankDecision securityChecks threatFlags createdAt processedAt integrity')
+      .lean();
+
+    if (!docs.length) {
+      return res.json({ success: true, message: 'No transactions found', rebuilt: 0 });
+    }
+
+    let prevHash = GENESIS_HASH;
+    let sequence = 0;
+    const updates = [];
+
+    for (const tx of docs) {
+      sequence += 1;
+      const payload = buildPayload(tx, prevHash, sequence);
+      const currentHash = computeHash(payload);
+
+      updates.push({
+        updateOne: {
+          filter: { _id: tx._id },
+          update: {
+            $set: {
+              integrity: {
+                sequence,
+                prevHash,
+                currentHash,
+                algorithm: 'sha256',
+                version: 'v1',
+                verifiedAt: new Date(),
+              },
+            },
+          },
+        },
+      });
+
+      prevHash = currentHash;
+    }
+
+    if (updates.length) await Transaction.bulkWrite(updates, { ordered: true });
+
+    res.json({ success: true, message: 'Integrity chain rebuilt', rebuilt: updates.length, latestSequence: sequence, latestHash: prevHash });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 };
