@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { GENESIS_HASH, buildPayload, computeHash } = require('../services/integrityChainService');
 
 const transactionSchema = new mongoose.Schema({
   transactionId: { type: String, required: true, unique: true },
@@ -54,8 +55,42 @@ const transactionSchema = new mongoose.Schema({
   frozenAmount: { type: Number, default: 0 },
   refundedAmount: { type: Number, default: 0 },
   refundedAt: Date,
+  integrity: {
+    sequence: { type: Number, default: 0 },
+    prevHash: { type: String, default: GENESIS_HASH },
+    currentHash: { type: String, default: null },
+    algorithm: { type: String, default: 'sha256' },
+    version: { type: String, default: 'v1' },
+    verifiedAt: Date,
+  },
   processedAt: Date,
   createdAt: { type: Date, default: Date.now }
+});
+
+transactionSchema.pre('save', async function attachIntegrityChain() {
+  if (!this.isNew || this.integrity?.currentHash) return;
+
+  if (!this.createdAt) this.createdAt = new Date();
+
+  const previous = await this.constructor
+    .findOne({ 'integrity.currentHash': { $ne: null } })
+    .sort({ 'integrity.sequence': -1, createdAt: -1, _id: -1 })
+    .select('integrity')
+    .lean();
+
+  const prevHash = previous?.integrity?.currentHash || GENESIS_HASH;
+  const sequence = Number(previous?.integrity?.sequence || 0) + 1;
+  const payload = buildPayload(this, prevHash, sequence);
+  const currentHash = computeHash(payload);
+
+  this.integrity = {
+    sequence,
+    prevHash,
+    currentHash,
+    algorithm: 'sha256',
+    version: 'v1',
+    verifiedAt: new Date(),
+  };
 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

@@ -5,9 +5,83 @@ A security middleware layer between users and bank accounts with ML-powered frau
 ## Architecture
 ```
 securevault/
-├── frontend/      # React app - 3 portals
-├── backend/       # Node.js + Express + MongoDB  
-└── ml-service/    # Python FastAPI + Isolation Forest
+├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── database.js
+│   │   ├── controllers/
+│   │   │   ├── authController.js
+│   │   │   ├── bankController.js
+│   │   │   ├── gatewayController.js
+│   │   │   └── transactionController.js
+│   │   ├── middleware/
+│   │   │   └── auth.js
+│   │   ├── models/
+│   │   │   ├── FraudAlert.js
+│   │   │   ├── Transaction.js
+│   │   │   └── User.js
+│   │   ├── routes/
+│   │   │   ├── auth.js
+│   │   │   ├── bank.js
+│   │   │   ├── gateway.js
+│   │   │   ├── transaction.js
+│   │   │   └── user.js
+│   │   ├── services/
+│   │   │   ├── fraudAlertService.js
+│   │   │   ├── mlService.js
+│   │   │   └── securityEngine.js
+│   │   ├── utils/
+│   │   │   ├── logger.js
+│   │   │   └── seedData.js
+│   │   └── server.js
+│   ├── .env
+│   ├── package-lock.json
+│   └── package.json
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── shared/
+│   │   │       └── Layout.js
+│   │   ├── context/
+│   │   │   └── AuthContext.js
+│   │   ├── pages/
+│   │   │   ├── bank/
+│   │   │   │   ├── Dashboard.js
+│   │   │   │   ├── FraudAlerts.js
+│   │   │   │   ├── NetworkGraph.js
+│   │   │   │   └── Transactions.js
+│   │   │   ├── gateway/
+│   │   │   │   ├── Dashboard.js
+│   │   │   │   ├── Transactions.js
+│   │   │   │   └── Users.js
+│   │   │   ├── user/
+│   │   │   │   ├── Dashboard.js
+│   │   │   │   ├── History.js
+│   │   │   │   └── Payments.js
+│   │   │   ├── LoginPage.js
+│   │   │   └── RegisterPage.js
+│   │   ├── services/
+│   │   │   ├── api.js
+│   │   │   └── socket.js
+│   │   ├── .env.example
+│   │   ├── App.js
+│   │   ├── index.css
+│   │   └── index.js
+│   ├── .env
+│   ├── package-lock.json
+│   └── package.json
+├── ml-service/
+│   ├── models/
+│   │   └── saved/
+│   │       ├── 69ac137ba7330a03c766825e.pkl
+│   │       └── 69c4d0d547402b1e56434384.pkl
+│   ├── isolation_forest_model.py
+│   ├── main.py
+│   └── requirements.txt
+├── .gitignore
+└── README.md
 ```
 
 ## Quick Start

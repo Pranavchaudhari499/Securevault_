@@ -9,17 +9,23 @@ const navConfigs = {
     { path: '/dashboard', label: 'Overview', icon: GridIcon },
     { path: '/payments', label: 'Payments', icon: SendIcon },
     { path: '/history', label: 'History', icon: ClockIcon },
+    { path: '/integrity-transactions', label: 'Integrity Ledger', icon: ShieldIcon },
   ],
   gateway_admin: [
     { path: '/gateway', label: 'Overview', icon: GridIcon },
     { path: '/gateway/transactions', label: 'Live Transactions', icon: ActivityIcon },
     { path: '/gateway/users', label: 'Users', icon: UsersIcon },
+    { path: '/gateway/integrity-transactions', label: 'Integrity Ledger', icon: ShieldIcon },
+    { path: '/gateway/policy-simulator', label: 'Policy Simulator', icon: ActivityIcon },
   ],
   bank_officer: [
     { path: '/bank', label: 'Overview', icon: GridIcon },
     { path: '/bank/fraud-alerts', label: 'Fraud Alerts', icon: ShieldIcon },
     { path: '/bank/transactions', label: 'Transactions', icon: ActivityIcon },
     { path: '/bank/network-graph', label: 'Network Graph', icon: NetworkIcon },
+    { path: '/bank/integrity-console', label: 'Integrity Console', icon: ShieldIcon },
+    { path: '/bank/integrity-transactions', label: 'Integrity Ledger', icon: ShieldIcon },
+    { path: '/bank/precision-first', label: 'Precision-First', icon: ShieldIcon },
   ]
 };
 
