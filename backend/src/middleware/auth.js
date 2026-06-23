@@ -10,7 +10,26 @@ exports.protect = async (req, res, next) => {
     if (!token) return res.status(401).json({ success: false, message: 'Not authorized' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'securevault_secret');
-    req.user = await User.findById(decoded.id).select('-password');
+    
+    // Check Redis cache first
+    const { redis, isReady } = require('../config/redis');
+    let user = null;
+    const cacheKey = `user:session:${decoded.id}`;
+    
+    if (isReady()) {
+      const cached = await redis.get(cacheKey);
+      if (cached) user = JSON.parse(cached);
+    }
+    
+    // Fallback to MongoDB if not cached
+    if (!user) {
+      user = await User.findById(decoded.id).select('-password').lean();
+      if (user && isReady()) {
+        await redis.set(cacheKey, JSON.stringify(user), 'EX', 300); // 5 min TTL
+      }
+    }
+    
+    req.user = user;
     if (!req.user) return res.status(401).json({ success: false, message: 'User not found' });
     next();
   } catch (error) {

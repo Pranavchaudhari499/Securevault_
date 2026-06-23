@@ -7,14 +7,14 @@ const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || 'securevaul
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, phone } = req.body;
+    const { name, email, password, phone } = req.body;
     if (!name || !email || !password) return res.status(400).json({ success: false, message: 'Name, email and password are required' });
     if (phone && phone.length > 10) return res.status(400).json({ success: false, message: 'Phone number must be 10 digits or less' });
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ success: false, message: 'Email already registered' });
-    const userRole = role || 'user';
-    const upiId = userRole === 'user' ? `${email.split('@')[0]}@securevault` : undefined;
-    const accountNumber = userRole === 'user' ? Math.floor(1000000000 + Math.random() * 9000000000).toString() : undefined;
+    const userRole = 'user'; // Public registration is always 'user'. Admin/officer roles are seeded only.
+    const upiId = `${email.split('@')[0]}@securevault`;
+    const accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
     const user = await User.create({ name, email, password, role: userRole, phone, upiId, accountNumber });
     const token = signToken(user._id);
     res.status(201).json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, upiId: user.upiId, balance: user.balance } });

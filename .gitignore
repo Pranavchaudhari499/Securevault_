@@ -40,3 +40,5 @@ coverage/
 __pycache__/
 *.pyc
 
+# logs directory
+logs/

@@ -3,8 +3,31 @@ const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const mlService = require('./mlService');
+const { redis, isReady: isRedisReady } = require('../config/redis');
 
-const usedNonces = new Set();
+// ── Nonce Store (Redis primary, in-memory fallback) ─────────────────────────
+const NONCE_TTL_SECONDS = 600; // 10 minutes
+const fallbackNonces = new Set(); // Only used when Redis is down
+
+async function hasNonce(nonce) {
+  if (isRedisReady()) {
+    return await redis.exists(`nonce:${nonce}`);
+  }
+  return fallbackNonces.has(nonce);
+}
+
+async function addNonce(nonce) {
+  if (isRedisReady()) {
+    await redis.set(`nonce:${nonce}`, '1', 'EX', NONCE_TTL_SECONDS);
+  } else {
+    fallbackNonces.add(nonce);
+    // Crude cleanup for fallback only
+    if (fallbackNonces.size > 10000) {
+      const arr = [...fallbackNonces];
+      arr.slice(0, 5000).forEach(n => fallbackNonces.delete(n));
+    }
+  }
+}
 
 function calcRiskLevel(score) {
   if (score >= 80) return 'critical';
@@ -91,12 +114,11 @@ async function analyzeTransaction(userId, txData, requestMeta) {
     }
   }
 
-  // 6. Replay attack
-  if (requestMeta.nonce && usedNonces.has(requestMeta.nonce)) {
+  // 6. Replay attack (Redis-backed with fallback)
+  if (requestMeta.nonce && await hasNonce(requestMeta.nonce)) {
     riskScore += 50; threatFlags.push('replay_attack'); mlReasons.push('Duplicate nonce — replay attack');
   } else if (requestMeta.nonce) {
-    usedNonces.add(requestMeta.nonce);
-    if (usedNonces.size > 50000) { const a = [...usedNonces]; a.slice(0, 25000).forEach(n => usedNonces.delete(n)); }
+    await addNonce(requestMeta.nonce);
   }
 
   // 7. ML

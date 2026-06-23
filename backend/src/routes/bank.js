@@ -24,8 +24,7 @@ router.put('/users/:userId/block',    protect, authorize('bank_officer'), blockU
 router.put('/users/:userId/monitor',  protect, authorize('bank_officer'), increaseMonitoring);
 
 // 🔗 New blockchain routes
-router.get('/blockchain/status',                  protect, authorize('bank_officer'), getBlockchainStatus);
-router.get('/blockchain/status', protect, authorize('bank_officer', 'gateway_admin'), getBlockchainStatus);
+router.get('/blockchain/status',                  protect, authorize('bank_officer', 'gateway_admin'), getBlockchainStatus);
 router.get('/blockchain/verify/:chainEventId',    protect, authorize('bank_officer'), verifyOnChain);
 router.get('/blockchain/user/:userId/history',    protect, authorize('bank_officer'), getUserChainHistory);
 

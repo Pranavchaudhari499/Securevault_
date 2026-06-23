@@ -9,14 +9,24 @@ const Transaction = require('../models/Transaction');
 const FraudAlert = require('../models/FraudAlert');
 const { getAlertsForBank } = require('../services/fraudAlertService');
 const blockchain = require('../services/blockchainService');   // ← NEW
+const { redis, isReady: isRedisReady } = require('../config/redis');
+const { invalidateUserCache, invalidateDashboardCache } = require('../utils/cacheInvalidation');
 
 function safeEmit(io, room, event, data) {
   try { if (io && typeof io.to === 'function') io.to(room).emit(event, data); } catch (e) {}
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────────────────
+// ── Dashboard (Redis cached, 30s TTL) ─────────────────────────────────────────
 exports.getDashboard = async (req, res) => {
   try {
+    const CACHE_KEY = 'cache:bank:dashboard';
+
+    // Serve from cache if available
+    if (isRedisReady()) {
+      const cached = await redis.get(CACHE_KEY);
+      if (cached) return res.json(JSON.parse(cached));
+    }
+
     const today    = new Date(); today.setHours(0, 0, 0, 0);
     const todayEnd = new Date(today); todayEnd.setHours(23, 59, 59, 999);
 
@@ -40,7 +50,12 @@ exports.getDashboard = async (req, res) => {
     const recentAlerts = await FraudAlert.find({ status: { $nin: ['approved'] } })
       .populate('userId', 'name email status riskScore').sort({ fraudScore: -1, suspiciousActivityCount: -1 }).limit(5);
 
-    res.json({ success: true, stats: { totalUsers, pendingReview, fraudAlerts, approvedToday }, volumeTrend, pendingTransactions, recentAlerts });
+    const result = { success: true, stats: { totalUsers, pendingReview, fraudAlerts, approvedToday }, volumeTrend, pendingTransactions, recentAlerts };
+
+    // Cache for 30 seconds
+    if (isRedisReady()) await redis.set(CACHE_KEY, JSON.stringify(result), 'EX', 30);
+
+    res.json(result);
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
@@ -88,6 +103,13 @@ exports.approveUser = async (req, res) => {
     // 🔗 Blockchain log (non-blocking)
     blockchain.logUserAction({ userId, action: 'bank_approved', notes: notes || 'Cleared by bank officer' });
 
+    // Bust cache so next dashboard load reflects changes
+    await Promise.all([
+      invalidateUserCache(userId),
+      invalidateDashboardCache('bank'),
+      invalidateDashboardCache('gateway'),
+    ]);
+
     safeEmit(io, `user-${userId}`,  'notification',    { message: 'Your account has been reviewed and cleared by the bank.', type: 'info' });
     safeEmit(io, 'bank-room',       'user-approved',   { user: { _id: userId, name: user.name, email: user.email } });
     safeEmit(io, 'gateway-room',    'user-status-update', { userId, status: 'active' });
@@ -118,6 +140,12 @@ exports.blockUser = async (req, res) => {
     // 🔗 Blockchain log (non-blocking)
     blockchain.logUserAction({ userId, action: 'bank_blocked', notes: notes || 'Manual block by bank officer' });
 
+    await Promise.all([
+      invalidateUserCache(userId),
+      invalidateDashboardCache('bank'),
+      invalidateDashboardCache('gateway'),
+    ]);
+
     safeEmit(io, `user-${userId}`, 'account-blocked',  { message: `Your account has been permanently blocked. Reason: ${notes}` });
     safeEmit(io, 'bank-room',      'user-blocked',     { user: { _id: userId, name: user.name, email: user.email } });
     safeEmit(io, 'gateway-room',   'user-status-update', { userId, status: 'blocked' });
@@ -147,6 +175,12 @@ exports.unblockUser = async (req, res) => {
 
     // 🔗 Blockchain log (non-blocking)
     blockchain.logUserAction({ userId, action: 'bank_unblocked', notes: notes || 'Account restored by bank officer' });
+
+    await Promise.all([
+      invalidateUserCache(userId),
+      invalidateDashboardCache('bank'),
+      invalidateDashboardCache('gateway'),
+    ]);
 
     safeEmit(io, `user-${userId}`, 'notification',       { message: 'Your account has been unblocked by the bank. You may now transact normally.', type: 'info' });
     safeEmit(io, 'bank-room',      'user-unblocked',     { user: { _id: userId, name: user.name, email: user.email } });

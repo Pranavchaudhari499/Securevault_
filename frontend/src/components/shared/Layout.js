@@ -22,10 +22,8 @@ const navConfigs = {
     { path: '/bank', label: 'Overview', icon: GridIcon },
     { path: '/bank/fraud-alerts', label: 'Fraud Alerts', icon: ShieldIcon },
     { path: '/bank/transactions', label: 'Transactions', icon: ActivityIcon },
-    { path: '/bank/network-graph', label: 'Network Graph', icon: NetworkIcon },
     { path: '/bank/integrity-console', label: 'Integrity Console', icon: ShieldIcon },
     { path: '/bank/integrity-transactions', label: 'Integrity Ledger', icon: ShieldIcon },
-    { path: '/bank/precision-first', label: 'Precision-First', icon: ShieldIcon },
   ]
 };
 

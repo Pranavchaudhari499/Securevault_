@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const FraudAlert = require('../models/FraudAlert');
+const { redis, isReady: isRedisReady } = require('../config/redis');
+const { invalidateUserCache, invalidateDashboardCache } = require('../utils/cacheInvalidation');
 
 function safeEmit(io, room, event, data) {
   try { if (io && typeof io.to === 'function') io.to(room).emit(event, data); } catch (e) {}
@@ -8,6 +10,14 @@ function safeEmit(io, room, event, data) {
 
 exports.getDashboardStats = async (req, res) => {
   try {
+    const CACHE_KEY = 'cache:gateway:dashboard';
+
+    // Serve from cache if available (15s TTL — shorter since live tx data changes fast)
+    if (isRedisReady()) {
+      const cached = await redis.get(CACHE_KEY);
+      if (cached) return res.json(JSON.parse(cached));
+    }
+
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const userScope = { role: 'user' };
     const blockedFilter = { role: 'user', $or: [{ status: 'blocked' }, { isSuspended: true }] };
@@ -34,7 +44,12 @@ exports.getDashboardStats = async (req, res) => {
       .populate('userId', 'name email riskScore status')
       .sort({ createdAt: -1 }).limit(15);
 
-    res.json({ success: true, stats: { totalUsers, flaggedUsers, blockedUsers, openAlerts, todayTx }, fraudTrend, recentAlerts, flaggedUsersList, recentTransactions });
+    const result = { success: true, stats: { totalUsers, flaggedUsers, blockedUsers, openAlerts, todayTx }, fraudTrend, recentAlerts, flaggedUsersList, recentTransactions };
+
+    // Cache for 15 seconds
+    if (isRedisReady()) await redis.set(CACHE_KEY, JSON.stringify(result), 'EX', 15);
+
+    res.json(result);
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
@@ -124,6 +139,13 @@ exports.suspendUser = async (req, res) => {
       userId: id, name: user.name, email: user.email
     });
 
+    // Bust caches so dashboards reflect the suspension immediately
+    await Promise.all([
+      invalidateUserCache(id),
+      invalidateDashboardCache('bank'),
+      invalidateDashboardCache('gateway'),
+    ]);
+
     res.json({ success: true, message: 'User suspended successfully', user });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -180,6 +202,13 @@ exports.unsuspendUser = async (req, res) => {
     safeEmit(io, 'gateway-room', 'user-status-update', {
       userId: id, status: 'active'
     });
+
+    // Bust caches
+    await Promise.all([
+      invalidateUserCache(id),
+      invalidateDashboardCache('bank'),
+      invalidateDashboardCache('gateway'),
+    ]);
 
     res.json({ success: true, message: 'User reactivated successfully', user });
   } catch (e) {
