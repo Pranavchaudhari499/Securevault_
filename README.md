@@ -1,4 +1,4 @@
-# 🔐 SecureVault — AI-Powered Fraud Detection Banking System
+# 🔐 SecureVault —  Fraud Detection Banking System
 
 <div align="center">
 
@@ -106,12 +106,6 @@ cp backend/.env.example backend/.env
 docker-compose up --build
 ```
 
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:3000 |
-| Backend API | http://localhost:5000 |
-| API Docs | http://localhost:5000/api/docs |
-| ML Service | http://localhost:8000 |
 
 ---
 
@@ -142,21 +136,6 @@ npm start
 
 ---
 
-## ⚙️ Environment Variables
-
-Create `backend/.env` from `backend/.env.example`:
-
-| Variable | Description | Example |
-|---|---|---|
-| `MONGODB_URI` | MongoDB Atlas connection string | `mongodb+srv://...` |
-| `JWT_SECRET` | Secret for signing JWTs | `your-secret-key` |
-| `JWT_EXPIRE` | Token expiry | `7d` |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
-| `ML_SERVICE_URL` | ML service base URL | `http://localhost:8000` |
-| `CLIENT_URL` | Frontend URL (CORS) | `http://localhost:3000` |
-| `CONTRACT_ADDRESS` | Ethereum contract address | `0x...` |
-| `RPC_URL` | Ethereum RPC endpoint | `https://sepolia.infura.io/...` |
-| `METAMASK_PRIVATE_KEY` | Wallet private key for signing | `0x...` |
 
 ---
 
