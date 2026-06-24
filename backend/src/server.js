@@ -69,6 +69,18 @@ app.use('/api/transactions', require('./routes/transaction'));
 app.use('/api/gateway', require('./routes/gateway'));
 app.use('/api/bank', require('./routes/bank'));
 
+// ── Swagger API Docs (dev only — hidden in production) ─────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  const swaggerUi = require('swagger-ui-express');
+  const swaggerSpec = require('./config/swagger');
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'SecureVault API Docs',
+    customCss: '.swagger-ui .topbar { background: #1a1a2e; }',
+    swaggerOptions: { persistAuthorization: true },
+  }));
+  app.get('/docs', (req, res) => res.redirect('/api/docs'));
+}
+
 // ── Health Check (reports all service statuses) ────────────────────────────────
 app.get('/api/health', async (req, res) => {
   const redisStatus = await getRedisStatus();
@@ -132,5 +144,10 @@ async function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-startServer(DEFAULT_PORT);
-module.exports = { app, io };
+// Only start listening when not in test mode
+// (Jest imports this file directly — supertest handles the HTTP layer)
+if (process.env.NODE_ENV !== 'test') {
+  startServer(DEFAULT_PORT);
+}
+
+module.exports = { app, io };

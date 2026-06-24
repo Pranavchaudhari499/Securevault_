@@ -71,6 +71,9 @@ const makeUserOrIpKey = (req) => {
 
 // ── Rate Limiters ───────────────────────────────────────────────────────────────
 
+// Skip rate limiting in test mode
+const skipInTest = () => process.env.NODE_ENV === 'test';
+
 // Global: 100 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -79,7 +82,7 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   store: new IoRedisStore('global', 60 * 1000),
   message: { success: false, message: 'Too many requests. Please slow down.' },
-  skip: (req) => req.path === '/api/health',
+  skip: (req) => req.path === '/api/health' || skipInTest(),
   validate: { xForwardedForHeader: false },
 });
 
@@ -92,6 +95,7 @@ const loginLimiter = rateLimit({
   store: new IoRedisStore('login', 15 * 60 * 1000),
   message: { success: false, message: 'Too many login attempts. Please try again after 15 minutes.' },
   keyGenerator: makeIpKey,
+  skip: skipInTest,
   validate: { xForwardedForHeader: false },
 });
 
@@ -104,6 +108,7 @@ const registerLimiter = rateLimit({
   store: new IoRedisStore('register', 60 * 60 * 1000),
   message: { success: false, message: 'Too many accounts created. Please try again after 1 hour.' },
   keyGenerator: makeIpKey,
+  skip: skipInTest,
   validate: { xForwardedForHeader: false },
 });
 
@@ -116,6 +121,7 @@ const transactionLimiter = rateLimit({
   store: new IoRedisStore('transaction', 60 * 1000),
   message: { success: false, message: 'Too many transactions. Maximum 10 per minute.' },
   keyGenerator: makeUserOrIpKey,
+  skip: skipInTest,
   validate: { xForwardedForHeader: false },
 });
 
@@ -128,6 +134,7 @@ const topUpLimiter = rateLimit({
   store: new IoRedisStore('topup', 60 * 60 * 1000),
   message: { success: false, message: 'Too many top-ups. Maximum 5 per hour.' },
   keyGenerator: makeUserOrIpKey,
+  skip: skipInTest,
   validate: { xForwardedForHeader: false },
 });
 

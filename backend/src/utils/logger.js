@@ -25,26 +25,29 @@ const transports = [
   new winston.transports.Console({ format: consoleFormat }),
 ];
 
-// Add file transports in all environments
-transports.push(
-  // errors only — keep small, rotate at 5MB, keep 5 files
-  new winston.transports.File({
-    filename: path.join(LOG_DIR, 'error.log'),
-    level: 'error',
-    format: fileFormat,
-    maxsize: 5 * 1024 * 1024,  // 5MB
-    maxFiles: 5,
-    tailable: true,
-  }),
-  // all levels — rotate at 10MB, keep 5 files
-  new winston.transports.File({
-    filename: path.join(LOG_DIR, 'combined.log'),
-    format: fileFormat,
-    maxsize: 10 * 1024 * 1024, // 10MB
-    maxFiles: 5,
-    tailable: true,
-  })
-);
+// Add file transports in non-test environments only
+// (Winston file handles keep Jest from exiting cleanly)
+if (process.env.NODE_ENV !== 'test') {
+  transports.push(
+    // errors only — keep small, rotate at 5MB, keep 5 files
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'error.log'),
+      level: 'error',
+      format: fileFormat,
+      maxsize: 5 * 1024 * 1024,  // 5MB
+      maxFiles: 5,
+      tailable: true,
+    }),
+    // all levels — rotate at 10MB, keep 5 files
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'combined.log'),
+      format: fileFormat,
+      maxsize: 10 * 1024 * 1024, // 10MB
+      maxFiles: 5,
+      tailable: true,
+    })
+  );
+}
 
 const logger = winston.createLogger({
   level: isDev ? 'debug' : 'info',

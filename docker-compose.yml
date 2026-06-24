@@ -1,0 +1,92 @@
+version: '3.9'
+
+services:
+  # ── Redis ───────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: securevault-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── ML Service (FastAPI) ────────────────────────────────────────────────────────
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: securevault-ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ml_models:/app/models/saved
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # ── Backend (Node.js) ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: securevault-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - REDIS_URL=redis://redis:6379
+      - ML_SERVICE_URL=http://ml-service:8000
+      - CLIENT_URL=http://localhost:3000
+      # Secrets — override these with real values or use a .env file
+      - MONGODB_URI=${MONGODB_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRE=${JWT_EXPIRE:-7d}
+      - CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+      - RPC_URL=${RPC_URL}
+      - METAMASK_PRIVATE_KEY=${METAMASK_PRIVATE_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    volumes:
+      - backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  # ── Frontend (React + Nginx) ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: securevault-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+      - REACT_APP_SOCKET_URL=http://localhost:5000
+
+volumes:
+  redis_data:
+  ml_models:
+  backend_logs:
